@@ -1,0 +1,21 @@
+# Sample alignment data for Muro 1
+# This file contains example alignment coordinates that would normally come from Civil3D XML
+
+# Muro 1 Alignment Points (UTM coordinates)
+# Format: PK, X, Y, Bearing(degrees), Description
+
+0+000, 400000.00, 6000000.00, 45.0, "Inicio Muro 1"
+0+020, 400014.14, 6000014.14, 45.5, "Estación 020"
+0+040, 400028.28, 6000028.28, 46.0, "Estación 040"
+0+060, 400042.42, 6000042.42, 46.5, "Estación 060"
+0+080, 400056.56, 6000056.56, 47.0, "Estación 080"
+0+100, 400070.70, 6000070.70, 47.5, "Estación 100"
+
+# ... (This would continue for all 72 stations to 1+434)
+# In the actual implementation, this would be generated from the AlignmentData class
+
+# Notes:
+# - Total length: 1434 meters
+# - Stations every 20 meters
+# - Cross-sections 80 meters wide
+# - Bearing changes reflect horizontal curves in the alignment

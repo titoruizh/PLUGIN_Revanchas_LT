@@ -1,0 +1,16 @@
+[general]
+name=Revanchas LT
+qgisMinimumVersion=3.0
+description=Plugin para análisis de perfiles topográficos de muros de contención
+version=1.0.0
+author=Las Tortolas Project
+email=support@lastortolas.com
+about=Automatiza el análisis topográfico de muros de contención, migrando el flujo de trabajo desde Civil3D a QGIS. Genera perfiles cada 20 metros con visualización de 80m de ancho.
+tracker=https://github.com/titoruizh/PLUGIN_Revanchas_LT/issues
+repository=https://github.com/titoruizh/PLUGIN_Revanchas_LT
+tags=topography,profiles,retaining walls,civil engineering
+homepage=https://github.com/titoruizh/PLUGIN_Revanchas_LT
+category=Plugins
+icon=icon.png
+experimental=False
+deprecated=False

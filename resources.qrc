@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/plugins/revanchas_lt">
+        <file>icon.png</file>
+    </qresource>
+</RCC>
