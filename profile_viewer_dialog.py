@@ -61,14 +61,18 @@ class CustomNavigationToolbar(NavigationToolbar):
         self.profile_viewer.canvas.mpl_connect('xlim_changed', self.on_zoom_changed)
     
     def zoom_to_profile_extent(self):
-        """Zoom to full profile extent (-50 to +50) - UPDATED RANGE"""
+        """Zoom to full profile extent with wall-specific ranges"""
         ax = self.profile_viewer.ax
         profile = self.profile_viewer.profiles_data[self.profile_viewer.current_profile_index]
+        
+        # 🆕 OBTENER RANGO ESPECÍFICO DEL MURO
+        x_min, x_max = self.profile_viewer.get_wall_display_range(profile)
         
         # Get valid elevations for Y-axis
         distances = profile.get('distances', [])
         elevations = profile.get('elevations', [])
-        valid_data = [(d, e) for d, e in zip(distances, elevations) if e != -9999 and -50 <= d <= 50]
+        valid_data = [(d, e) for d, e in zip(distances, elevations) 
+                    if e != -9999 and x_min <= d <= x_max]  # 🔧 USAR RANGO DINÁMICO
         
         if valid_data:
             valid_distances, valid_elevations = zip(*valid_data)
@@ -87,7 +91,8 @@ class CustomNavigationToolbar(NavigationToolbar):
             
             margin_y = (max(y_values) - min(y_values)) * 0.05
             
-            ax.set_xlim(-50, 50)
+            # 🆕 USAR RANGOS DINÁMICOS
+            ax.set_xlim(x_min, x_max)
             ax.set_ylim(min(y_values) - margin_y, max(y_values) + margin_y)
             self.profile_viewer.canvas.draw()
             self.update_zoom_label()
@@ -97,15 +102,19 @@ class CustomNavigationToolbar(NavigationToolbar):
         self.update_zoom_label()
     
     def update_zoom_label(self):
-        """Update zoom level percentage - UPDATED for new range"""
+        """Update zoom level percentage with dynamic width"""
         ax = self.profile_viewer.ax
+        profile = self.profile_viewer.profiles_data[self.profile_viewer.current_profile_index]
+        
+        # 🆕 OBTENER ANCHO DINÁMICO
+        x_min, x_max = self.profile_viewer.get_wall_display_range(profile)
+        full_width = x_max - x_min  # Ancho dinámico según el muro
+        
         xlim = ax.get_xlim()
         current_width = xlim[1] - xlim[0]
-        full_width = 100  # -50 to +50 = 100m total
         
         zoom_percentage = (full_width / current_width) * 100
         
-        # Simple zoom indicator without colors
         self.zoom_label.setText(f"Zoom: {zoom_percentage:.0f}%")
 
 
@@ -151,7 +160,8 @@ class InteractiveProfileViewer(QDialog):
         
         # Current zoom level (100% = full extent -50 to +50 = 100m width)
         current_width = xlim[1] - xlim[0]
-        full_width = 100  # -50 to +50 = 100m
+        x_min, x_max = self.get_wall_display_range()
+        full_width = x_max - x_min  # Ancho dinámico según el muro
         current_zoom = (full_width / current_width) * 100
         
         # LIMIT ZOOM OUT - No permitir zoom out más allá del 100%
@@ -179,20 +189,20 @@ class InteractiveProfileViewer(QDialog):
         new_ylim = [y_center - y_height/2, y_center + y_height/2]
         
         # CONSTRAIN X-AXIS TO PROFILE BOUNDS (-50 to +50)
-        if new_xlim[0] < -50:
-            new_xlim = [-50, -50 + x_width]
-        if new_xlim[1] > 50:
-            new_xlim = [50 - x_width, 50]
+        if new_xlim[0] < x_min:
+            new_xlim = [x_min, x_min + x_width]
+        if new_xlim[1] > x_max:
+            new_xlim = [x_max - x_width, x_max]
         
         # DOUBLE CHECK: No permitir zoom out más allá de extensión completa
         if new_xlim[1] - new_xlim[0] > full_width:
             # Forzar a zoom extensión completa
-            new_xlim = [-50, 50]
+            new_xlim = [x_min, x_max]
             # Mantener Y proporcional
             profile = self.profiles_data[self.current_profile_index]
             distances = profile.get('distances', [])
             elevations = profile.get('elevations', [])
-            valid_data = [(d, e) for d, e in zip(distances, elevations) if e != -9999 and -50 <= d <= 50]
+            valid_data = [(d, e) for d, e in zip(distances, elevations) if e != -9999 and x_min <= d <= x_max]
             
             if valid_data:
                 _, valid_elevations = zip(*valid_data)
@@ -220,6 +230,36 @@ class InteractiveProfileViewer(QDialog):
         self.canvas.draw()
         if hasattr(self, 'toolbar'):
             self.toolbar.update_zoom_label()
+
+    def get_wall_display_range(self, profile=None):
+        if not profile:
+            profile = self.profiles_data[self.current_profile_index]
+        
+        # Detectar el tipo de muro por coordenadas
+        if 'centerline_x' in profile and 'centerline_y' in profile:
+            x = profile['centerline_x']
+            y = profile['centerline_y']
+            
+            # Muro 2 (Oeste): rango especial
+            if 336193 <= x <= 336328 and 6332549 <= y <= 6333195:
+                return (-20, 40)  # Más enfoque al lado derecho
+        
+        # Default para Muro 1 (Principal) y Muro 3 (Este)
+        return (-40, 20)
+
+    def detect_wall_name(self, profile):
+        """Detecta el nombre del muro para mostrar en el título"""
+        if 'centerline_x' in profile and 'centerline_y' in profile:
+            x = profile['centerline_x']
+            y = profile['centerline_y']
+            
+            if 336688 <= x <= 337997 and 6334170 <= y <= 6334753:
+                return "Muro Principal"
+            elif 336193 <= x <= 336328 and 6332549 <= y <= 6333195:
+                return "Muro Oeste"
+            elif 339816 <= x <= 340114 and 6333743 <= y <= 6334206:
+                return "Muro Este"
+        return None
     
     def init_matplotlib(self):
         """Initialize matplotlib components with navigation toolbar"""
@@ -870,7 +910,8 @@ class InteractiveProfileViewer(QDialog):
         
         profile = self.profiles_data[self.current_profile_index]
         current_pk = profile.get('pk', 'Unknown')
-        
+        # 🆕 OBTENER RANGOS ESPECÍFICOS DEL MURO
+        x_min, x_max = self.get_wall_display_range(profile)
         # Clear and plot
         self.ax.clear()
         
@@ -909,7 +950,7 @@ class InteractiveProfileViewer(QDialog):
             crown_elevation = self.current_crown_point[1]
         
         if crown_elevation is not None:
-            x_range = [-40, 20]  # Same as display limits
+            x_range = [x_min, x_max]  # Usar rangos específicos del muro
             
             # 🔥 MAIN REFERENCE LINE - MÁS INTENSA
             y_ref = [crown_elevation, crown_elevation]
@@ -989,11 +1030,11 @@ class InteractiveProfileViewer(QDialog):
         self.ax.legend(loc='upper right', fontsize=9)
         
         # 🎯 Focus on relevant area (-40 to +20)
-        self.ax.set_xlim(-40, 20)
+        self.ax.set_xlim(x_min, x_max)
         
         if valid_elevations:
             # Filter elevations within the display range for better Y scaling
-            relevant_elevations = [e for d, e in valid_data if -40 <= d <= 20]
+            relevant_elevations = [e for d, e in valid_data if x_min <= d <= x_max]
             
             # 🆕 Include both crown elevation and auxiliary line in Y-axis scaling
             if crown_elevation is not None:
