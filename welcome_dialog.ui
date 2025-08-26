@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>450</width>
+    <width>513</width>
     <height>300</height>
    </rect>
   </property>
@@ -97,11 +97,11 @@
          <bold>true</bold>
         </font>
        </property>
-       <property name="text">
-        <string>Muro 1</string>
-       </property>
        <property name="toolTip">
         <string>Muro disponible para análisis (PK 0+000 a 1+434)</string>
+       </property>
+       <property name="text">
+        <string>Muro Principal</string>
        </property>
       </widget>
      </item>
@@ -120,6 +120,9 @@
      </item>
      <item>
       <widget class="QPushButton" name="wall2_button">
+       <property name="enabled">
+        <bool>false</bool>
+       </property>
        <property name="minimumSize">
         <size>
          <width>100</width>
@@ -134,10 +137,7 @@
         </font>
        </property>
        <property name="text">
-        <string>Muro 2</string>
-       </property>
-       <property name="enabled">
-        <bool>false</bool>
+        <string>Muro Oeste</string>
        </property>
       </widget>
      </item>
@@ -156,6 +156,9 @@
      </item>
      <item>
       <widget class="QPushButton" name="wall3_button">
+       <property name="enabled">
+        <bool>false</bool>
+       </property>
        <property name="minimumSize">
         <size>
          <width>100</width>
@@ -170,10 +173,7 @@
         </font>
        </property>
        <property name="text">
-        <string>Muro 3</string>
-       </property>
-       <property name="enabled">
-        <bool>false</bool>
+        <string>Muro Este</string>
        </property>
       </widget>
      </item>

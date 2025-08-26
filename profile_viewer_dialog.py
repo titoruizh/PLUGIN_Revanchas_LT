@@ -1,13 +1,8 @@
-# -*- coding: utf-8 -*-
-"""
-Interactive Profile Viewer Dialog
-Dynamic profile visualization with measurement tools
-"""
 
 import os
 from qgis.PyQt.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton, 
                                  QLabel, QSlider, QGroupBox, QMessageBox,
-                                 QFileDialog, QProgressDialog)
+                                 QFileDialog, QProgressDialog, QApplication)
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QFont
 from qgis.core import QgsApplication
@@ -16,7 +11,7 @@ try:
     import matplotlib.pyplot as plt
     from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
     from matplotlib.figure import Figure
-    from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar  # 🆕 NUEVO
+    from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
     HAS_MATPLOTLIB = True
 except ImportError:
     HAS_MATPLOTLIB = False
@@ -29,7 +24,7 @@ class CustomNavigationToolbar(NavigationToolbar):
         super().__init__(canvas, parent)
         self.profile_viewer = profile_viewer
         
-        # 🔥 Remove ALL unwanted buttons and keep only essential ones
+        # Remove ALL unwanted buttons and keep only essential ones
         actions = self.actions()
         
         # Keep only: Home, Pan, Zoom
@@ -47,13 +42,13 @@ class CustomNavigationToolbar(NavigationToolbar):
                 if 'back' in tooltip_text or 'forward' in tooltip_text or 'configure' in tooltip_text:
                     self.removeAction(action)
         
-        # 🆕 Add ONLY zoom extent button (remove precision and measurements)
+        # Add ONLY zoom extent button
         self.addSeparator()
         
         # Only Zoom to extent (fit profile in view)
         zoom_extent_action = self.addAction("🔍 Extensión")
         zoom_extent_action.triggered.connect(self.zoom_to_profile_extent)
-        zoom_extent_action.setToolTip("Vista completa del perfil (-40m a +20m)")
+        zoom_extent_action.setToolTip("Vista completa del perfil (-50m a +50m)")
         
         self.addSeparator()
         
@@ -66,14 +61,14 @@ class CustomNavigationToolbar(NavigationToolbar):
         self.profile_viewer.canvas.mpl_connect('xlim_changed', self.on_zoom_changed)
     
     def zoom_to_profile_extent(self):
-        """Zoom to full profile extent (-40 to +20) - ONLY method kept"""
+        """Zoom to full profile extent (-50 to +50) - UPDATED RANGE"""
         ax = self.profile_viewer.ax
         profile = self.profile_viewer.profiles_data[self.profile_viewer.current_profile_index]
         
         # Get valid elevations for Y-axis
         distances = profile.get('distances', [])
         elevations = profile.get('elevations', [])
-        valid_data = [(d, e) for d, e in zip(distances, elevations) if e != -9999 and -40 <= d <= 20]
+        valid_data = [(d, e) for d, e in zip(distances, elevations) if e != -9999 and -50 <= d <= 50]
         
         if valid_data:
             valid_distances, valid_elevations = zip(*valid_data)
@@ -92,7 +87,7 @@ class CustomNavigationToolbar(NavigationToolbar):
             
             margin_y = (max(y_values) - min(y_values)) * 0.05
             
-            ax.set_xlim(-40, 20)
+            ax.set_xlim(-50, 50)
             ax.set_ylim(min(y_values) - margin_y, max(y_values) + margin_y)
             self.profile_viewer.canvas.draw()
             self.update_zoom_label()
@@ -102,16 +97,17 @@ class CustomNavigationToolbar(NavigationToolbar):
         self.update_zoom_label()
     
     def update_zoom_label(self):
-        """Update zoom level percentage - SIMPLE VERSION"""
+        """Update zoom level percentage - UPDATED for new range"""
         ax = self.profile_viewer.ax
         xlim = ax.get_xlim()
         current_width = xlim[1] - xlim[0]
-        full_width = 60  # -40 to +20 = 60m total
+        full_width = 100  # -50 to +50 = 100m total
         
         zoom_percentage = (full_width / current_width) * 100
         
         # Simple zoom indicator without colors
         self.zoom_label.setText(f"Zoom: {zoom_percentage:.0f}%")
+
 
 class InteractiveProfileViewer(QDialog):
     """Interactive profile viewer with navigation and measurement tools"""
@@ -122,14 +118,14 @@ class InteractiveProfileViewer(QDialog):
         self.current_profile_index = 0
         self.measurement_mode = None
         
-        # 🔧 FIXED: Separate measurements per PK
+        # Separate measurements per PK
         self.saved_measurements = {}  # PK -> {crown: {x, y}, width: {p1, p2, distance}}
         
         # Current temporary measurements (reset when changing PK)
         self.current_crown_point = None
         self.current_width_points = []
         
-        # 🆕 NEW: Auto-detection parameters
+        # Auto-detection parameters
         self.auto_width_detection = True
         self.pretil_height_threshold = 0.5  # metros - diferencia mínima para detectar pretil
         self.search_step = 0.5  # metros - paso de búsqueda
@@ -144,7 +140,7 @@ class InteractiveProfileViewer(QDialog):
             self.init_no_matplotlib()
 
     def on_mouse_scroll(self, event):
-        """Handle mouse wheel zoom - MORE AGGRESSIVE zoom, LESS mouse tracking"""
+        """Handle mouse wheel zoom - UPDATED for new range"""
         if not event.inaxes:
             return
         
@@ -153,25 +149,24 @@ class InteractiveProfileViewer(QDialog):
         xlim = ax.get_xlim()
         ylim = ax.get_ylim()
         
-        # Current zoom level (100% = full extent -40 to +20 = 60m width)
+        # Current zoom level (100% = full extent -50 to +50 = 100m width)
         current_width = xlim[1] - xlim[0]
-        full_width = 60  # -40 to +20 = 60m
+        full_width = 100  # -50 to +50 = 100m
         current_zoom = (full_width / current_width) * 100
         
-        # 🚫 LIMIT ZOOM OUT - No permitir zoom out más allá del 100%
+        # LIMIT ZOOM OUT - No permitir zoom out más allá del 100%
         if event.button == 'down' and current_zoom <= 100:
             return
         
-        # 🚀 MÁS AGRESIVO - Factor más grande para zoom más rápido
-        zoom_factor = 0.85 if event.button == 'up' else 1.18  # ±15-18% (antes era 5%)
+        # Zoom factor
+        zoom_factor = 0.85 if event.button == 'up' else 1.18
         
-        # 🎯 MENOS SEGUIMIENTO DEL MOUSE - Más centro, menos mouse
+        # Center calculation
         current_center_x = (xlim[0] + xlim[1]) / 2
         current_center_y = (ylim[0] + ylim[1]) / 2
         
-        # 🔥 CAMBIO PRINCIPAL: 20% mouse + 80% centro (antes 40%/60%)
-        x_center = event.xdata * 0.2 + current_center_x * 0.8  # MUY poco seguimiento del mouse
-        y_center = event.ydata * 0.2 + current_center_y * 0.8  # MUY poco seguimiento del mouse
+        x_center = event.xdata * 0.2 + current_center_x * 0.8
+        y_center = event.ydata * 0.2 + current_center_y * 0.8
         
         if x_center is None or y_center is None:
             return
@@ -183,21 +178,21 @@ class InteractiveProfileViewer(QDialog):
         new_xlim = [x_center - x_width/2, x_center + x_width/2]
         new_ylim = [y_center - y_height/2, y_center + y_height/2]
         
-        # 🔥 CONSTRAIN X-AXIS TO PROFILE BOUNDS (-40 to +20)
-        if new_xlim[0] < -40:
-            new_xlim = [-40, -40 + x_width]
-        if new_xlim[1] > 20:
-            new_xlim = [20 - x_width, 20]
+        # CONSTRAIN X-AXIS TO PROFILE BOUNDS (-50 to +50)
+        if new_xlim[0] < -50:
+            new_xlim = [-50, -50 + x_width]
+        if new_xlim[1] > 50:
+            new_xlim = [50 - x_width, 50]
         
-        # 🚫 DOUBLE CHECK: No permitir zoom out más allá de extensión completa
+        # DOUBLE CHECK: No permitir zoom out más allá de extensión completa
         if new_xlim[1] - new_xlim[0] > full_width:
             # Forzar a zoom extensión completa
-            new_xlim = [-40, 20]
+            new_xlim = [-50, 50]
             # Mantener Y proporcional
             profile = self.profiles_data[self.current_profile_index]
             distances = profile.get('distances', [])
             elevations = profile.get('elevations', [])
-            valid_data = [(d, e) for d, e in zip(distances, elevations) if e != -9999 and -40 <= d <= 20]
+            valid_data = [(d, e) for d, e in zip(distances, elevations) if e != -9999 and -50 <= d <= 50]
             
             if valid_data:
                 _, valid_elevations = zip(*valid_data)
@@ -232,13 +227,13 @@ class InteractiveProfileViewer(QDialog):
         self.canvas = FigureCanvas(self.figure)
         self.ax = self.figure.add_subplot(111)
         
-        # 🆕 Custom navigation toolbar with topographic tools
+        # Custom navigation toolbar with topographic tools
         self.toolbar = CustomNavigationToolbar(self.canvas, self, self)
         
         # Enable matplotlib interactions
         self.canvas.mpl_connect('button_press_event', self.on_canvas_click)
         
-        # 🆕 Enable mouse wheel zoom
+        # Enable mouse wheel zoom
         self.canvas.mpl_connect('scroll_event', self.on_mouse_scroll)
         
         layout = QVBoxLayout()
@@ -253,26 +248,26 @@ class InteractiveProfileViewer(QDialog):
         """Initialize the user interface with zoom controls"""
         layout = QVBoxLayout()
         
-        # 📊 Matplotlib canvas with toolbar
+        # Matplotlib canvas with toolbar
         self.figure = Figure(figsize=(14, 8))
         self.canvas = FigureCanvas(self.figure)
         self.ax = self.figure.add_subplot(111)
         
-        # 🆕 Custom navigation toolbar
+        # Custom navigation toolbar
         self.toolbar = CustomNavigationToolbar(self.canvas, self, self)
         
         # Enable matplotlib interactions
         self.canvas.mpl_connect('button_press_event', self.on_canvas_click)
         self.canvas.mpl_connect('scroll_event', self.on_mouse_scroll)
         
-        # 🎛️ Control panels
+        # Control panels
         control_panel = self.create_control_panel()
         measurement_panel = self.create_measurement_panel()
         info_panel = self.create_info_panel()
         
-        # 🔧 Layout assembly with toolbar
+        # Layout assembly with toolbar
         layout.addWidget(control_panel)
-        layout.addWidget(self.toolbar)  # 🆕 Navigation toolbar
+        layout.addWidget(self.toolbar)  # Navigation toolbar
         layout.addWidget(self.canvas, stretch=1)
         
         bottom_layout = QHBoxLayout()
@@ -357,7 +352,7 @@ class InteractiveProfileViewer(QDialog):
         self.auto_detect_btn.clicked.connect(self.toggle_auto_detection)
         btn_layout2.addWidget(self.auto_detect_btn)
         
-        # 🆕 BOTÓN DE EXPORTACIÓN (TERCERA FILA)
+        # BOTÓN DE EXPORTACIÓN (TERCERA FILA)
         btn_layout3 = QHBoxLayout()
         self.export_btn = QPushButton("📊 Exportar Mediciones CSV")
         self.export_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; padding: 8px;")
@@ -377,7 +372,7 @@ class InteractiveProfileViewer(QDialog):
         # Assembly
         layout.addLayout(btn_layout1)
         layout.addLayout(btn_layout2)
-        layout.addLayout(btn_layout3)  # 🆕 NUEVA FILA
+        layout.addLayout(btn_layout3)
         layout.addWidget(self.crown_result)
         layout.addWidget(self.width_result)
         layout.addWidget(self.lama_result)
@@ -424,14 +419,14 @@ class InteractiveProfileViewer(QDialog):
             self.measurement_mode = 'crown'
             self.crown_btn.setChecked(True)
             self.width_btn.setChecked(False)
-            self.lama_btn.setChecked(False)  # 🆕
+            self.lama_btn.setChecked(False)
         elif mode == 'width':
             self.measurement_mode = 'width' 
             self.width_btn.setChecked(True)
             self.crown_btn.setChecked(False)
-            self.lama_btn.setChecked(False)  # 🆕
+            self.lama_btn.setChecked(False)
             self.current_width_points = []  # Reset width measurement
-        elif mode == 'lama':  # 🆕 NUEVO MODO
+        elif mode == 'lama':
             self.measurement_mode = 'lama'
             self.lama_btn.setChecked(True)
             self.crown_btn.setChecked(False)
@@ -462,14 +457,14 @@ class InteractiveProfileViewer(QDialog):
         self.revancha_result.setText("Revancha: --")
         self.canvas.setCursor(Qt.ArrowCursor)
         
-        # 🆕 This will remove the reference line too since crown is cleared
+        # This will remove the reference line too since crown is cleared
         self.update_profile_display()
     
     def find_nearest_terrain_point(self, x_click):
-        """🎯 ONLY snap to horizontal reference line for width measurements"""
+        """ONLY snap to horizontal reference line for width measurements"""
         current_pk = self.profiles_data[self.current_profile_index]['pk']
         
-        # 🔥 ONLY REFERENCE LINE SNAP - No terrain snap for width measurements
+        # ONLY REFERENCE LINE SNAP - No terrain snap for width measurements
         crown_elevation = None
         if current_pk in self.saved_measurements and 'crown' in self.saved_measurements[current_pk]:
             crown_elevation = self.saved_measurements[current_pk]['crown']['y']
@@ -478,15 +473,15 @@ class InteractiveProfileViewer(QDialog):
         
         # Return point on reference line or None
         if crown_elevation is not None:
-            # Ensure click is within reasonable range (-40 to +20)
-            if -40 <= x_click <= 20:
+            # Ensure click is within reasonable range (-50 to +50)
+            if -50 <= x_click <= 50:
                 return (x_click, crown_elevation)  # Exact X click, crown Y
         
-        # 🚫 NO TERRAIN SNAP - Return None if no reference line
+        # NO TERRAIN SNAP - Return None if no reference line
         return None
     
     def find_terrain_snap_point(self, x_click):
-        """🎯 Find closest point ONLY on terrain natural (for crown and lama)"""
+        """Find closest point ONLY on terrain natural (for crown and lama)"""
         profile = self.profiles_data[self.current_profile_index]
         distances = profile.get('distances', [])
         elevations = profile.get('elevations', [])
@@ -510,7 +505,7 @@ class InteractiveProfileViewer(QDialog):
         return closest_point
     
     def detect_road_width_automatically(self, crown_x, crown_y):
-        """🚀 IMPROVED: Auto-detect full road width with better algorithm"""
+        """IMPROVED: Auto-detect full road width with better algorithm"""
         profile = self.profiles_data[self.current_profile_index]
         distances = profile.get('distances', [])
         elevations = profile.get('elevations', [])
@@ -525,7 +520,7 @@ class InteractiveProfileViewer(QDialog):
         
         print(f"🔍 Auto-detecting from {len(valid_data)} points, crown at X={crown_x:.2f}")
         
-        # 🐛 DEBUG - Add this line
+        # DEBUG - Add this line
         self.debug_profile_data(crown_x, crown_y)
         
         # Find left and right boundaries using simpler approach

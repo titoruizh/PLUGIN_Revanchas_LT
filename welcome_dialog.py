@@ -35,40 +35,30 @@ FORM_CLASS, _ = uic.loadUiType(os.path.join(
 
 class WelcomeDialog(QtWidgets.QDialog, FORM_CLASS):
     def __init__(self, parent=None):
-        """Constructor."""
         super(WelcomeDialog, self).__init__(parent)
-        # Set up the user interface from Designer through FORM_CLASS.
-        # After self.setupUi() you can access any designer object by doing
-        # self.<objectname>, and you can use autoconnect slots - see
-        # http://qt-project.org/doc/qt-4.8/designer-using-a-ui-file.html#autconnecting-slots
         self.setupUi(self)
         
-        # Initialize selected wall
         self.selected_wall = None
-        
-        # Connect button signals
+
+        # Cambia solo el texto que ve el usuario
+        self.wall1_button.setText("Muro Principal")
+        self.wall2_button.setText("Muro Oeste")
+        self.wall3_button.setText("Muro Este")
+
+        # Habilita todos los botones
+        self.wall2_button.setEnabled(True)
+        self.wall3_button.setEnabled(True)
+        self.wall2_button.setToolTip("")
+        self.wall3_button.setToolTip("")
+
+        # Internamente usa las claves de alineación (importante para que funcione con los datos existentes)
         self.wall1_button.clicked.connect(lambda: self.select_wall("Muro 1"))
         self.wall2_button.clicked.connect(lambda: self.select_wall("Muro 2"))
         self.wall3_button.clicked.connect(lambda: self.select_wall("Muro 3"))
         
-        # Disable future walls for now
-        self.wall2_button.setEnabled(False)
-        self.wall3_button.setEnabled(False)
-        self.wall2_button.setToolTip("Disponible en versiones futuras")
-        self.wall3_button.setToolTip("Disponible en versiones futuras")
-        
     def select_wall(self, wall_name):
-        """Handle wall selection"""
-        if wall_name == "Muro 1":
-            self.selected_wall = wall_name
-            self.accept()
-        else:
-            QMessageBox.information(
-                self,
-                "Información",
-                f"{wall_name} estará disponible en versiones futuras del plugin."
-            )
+        self.selected_wall = wall_name
+        self.accept()
     
     def get_selected_wall(self):
-        """Return the selected wall"""
         return self.selected_wall

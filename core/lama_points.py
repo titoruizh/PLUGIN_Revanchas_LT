@@ -17,31 +17,31 @@ class LamaPointsManager:
         self.load_lama_points()
         
     def load_lama_points(self):
-        """Load lama points from CSV files in data directory"""
         print("🔍 Loading lama points from CSV...")
-        
+
         data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'lama_points')
         print(f"🔍 Looking for CSV files in: {data_dir}")
-        
-        # Check if directory exists
-        if not os.path.exists(data_dir):
-            print(f"⚠️ Directory does not exist: {data_dir}")
-            print("   Creating directory...")
-            try:
-                os.makedirs(data_dir, exist_ok=True)
-            except Exception as e:
-                print(f"❌ Could not create directory: {e}")
-        
-        # Load Muro 1 lama points from CSV
+
+        # Muro 1
         muro1_csv_file = os.path.join(data_dir, 'muro1_lama_points.csv')
-        
         if os.path.exists(muro1_csv_file):
-            print(f"✅ CSV file found: {muro1_csv_file}")
             self.lama_points['Muro 1'] = self._load_csv_file(muro1_csv_file)
-            print(f"✅ Loaded {len(self.lama_points['Muro 1'])} lama points from CSV")
         else:
-            print(f"⚠️ Lama points CSV file not found: {muro1_csv_file}")
             self.lama_points['Muro 1'] = []
+
+        # Muro 2
+        muro2_csv_file = os.path.join(data_dir, 'muro2_lama_points.csv')
+        if os.path.exists(muro2_csv_file):
+            self.lama_points['Muro 2'] = self._load_csv_file(muro2_csv_file)
+        else:
+            self.lama_points['Muro 2'] = []
+
+        # Muro 3
+        muro3_csv_file = os.path.join(data_dir, 'muro3_lama_points.csv')
+        if os.path.exists(muro3_csv_file):
+            self.lama_points['Muro 3'] = self._load_csv_file(muro3_csv_file)
+        else:
+            self.lama_points['Muro 3'] = []
     
     def _load_csv_file(self, file_path):
         """Load lama points from CSV file (Perfil,X,Y format)"""
