@@ -207,7 +207,6 @@ class RevanchasLTDialog(QtWidgets.QDialog, FORM_CLASS):
             # 🚀 Launch interactive viewer directly
             try:
                 from .profile_viewer_dialog import InteractiveProfileViewer
-                
                 viewer = InteractiveProfileViewer(self.profiles_data, self)
                 viewer.exec_()
                 

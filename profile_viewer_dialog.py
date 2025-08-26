@@ -139,14 +139,53 @@ class InteractiveProfileViewer(QDialog):
         self.pretil_height_threshold = 0.5  # metros - diferencia mínima para detectar pretil
         self.search_step = 0.5  # metros - paso de búsqueda
         
+        # Initialize key state BEFORE UI creation
+        self._key_A_pressed = False
+        
         self.setWindowTitle("Visualizador Interactivo de Perfiles")
         self.setModal(True)
         self.resize(1200, 800)
         
         if HAS_MATPLOTLIB:
             self.init_ui()
+            # Setup keyboard events AFTER UI is fully created
+            self.setup_keyboard_events()
         else:
             self.init_no_matplotlib()
+        
+        # AHORA es seguro acceder a self.canvas:
+        self._key_A_pressed = False
+        self.canvas.setFocusPolicy(Qt.StrongFocus)
+        self.canvas.setFocus()
+        self.canvas.mpl_connect('key_press_event', self.on_key_press)
+        self.canvas.mpl_connect('key_release_event', self.on_key_release)
+
+    def setup_keyboard_events(self):
+        """Setup keyboard event handling after UI is created"""
+        self.canvas.setFocusPolicy(Qt.StrongFocus)
+        self.canvas.mpl_connect('key_press_event', self.on_key_press)
+        self.canvas.mpl_connect('key_release_event', self.on_key_release)
+        
+        # Ensure canvas gets focus immediately
+        self.canvas.setFocus()
+
+    def on_key_press(self, event):
+        """Handle key press events"""
+        if event.key == 'a':
+            self._key_A_pressed = True
+            # Visual feedback when A is pressed during width measurement
+            if self.measurement_mode == 'width':
+                self.auto_status.setText("🎯 SNAP AUTOMÁTICO ACTIVO - Haz clic para intersección con terreno")
+                self.auto_status.setStyleSheet("color: red; font-style: italic; font-weight: bold;")
+
+    def on_key_release(self, event):
+        """Handle key release events"""
+        if event.key == 'a':
+            self._key_A_pressed = False
+            # Restore normal status when A is released
+            if self.measurement_mode == 'width':
+                self.auto_status.setText("Herramienta Ancho activa - Presiona 'A' para auto-snap")
+                self.auto_status.setStyleSheet("color: purple; font-style: italic; font-weight: bold;")
 
     def on_mouse_scroll(self, event):
         """Handle mouse wheel zoom - UPDATED for new range"""
@@ -235,16 +274,21 @@ class InteractiveProfileViewer(QDialog):
         if not profile:
             profile = self.profiles_data[self.current_profile_index]
         
-        # Detectar el tipo de muro por coordenadas
+        # Usar alignment_type si está disponible (más confiable)
+        station = profile.get('station', {})
+        alignment_type = station.get('alignment_type', None)
+        
+        if alignment_type == 'curved':
+            return (-20, 40)  # Muro 2: rango especial
+        
+        # Si no, fallback a coordenadas (por compatibilidad)
         if 'centerline_x' in profile and 'centerline_y' in profile:
             x = profile['centerline_x']
             y = profile['centerline_y']
-            
-            # Muro 2 (Oeste): rango especial
             if 336193 <= x <= 336328 and 6332549 <= y <= 6333195:
-                return (-20, 40)  # Más enfoque al lado derecho
+                return (-20, 40)
         
-        # Default para Muro 1 (Principal) y Muro 3 (Este)
+        # Default para Muro 1 y 3
         return (-40, 20)
 
     def detect_wall_name(self, profile):
@@ -454,7 +498,7 @@ class InteractiveProfileViewer(QDialog):
             self.auto_status.setStyleSheet("color: orange; font-style: italic;")
     
     def set_measurement_mode(self, mode):
-        """Set measurement mode"""
+        """Set measurement mode and ensure canvas has focus"""
         if mode == 'crown':
             self.measurement_mode = 'crown'
             self.crown_btn.setChecked(True)
@@ -473,6 +517,14 @@ class InteractiveProfileViewer(QDialog):
             self.width_btn.setChecked(False)
         
         self.canvas.setCursor(Qt.CrossCursor)
+        
+        # CRITICAL: Ensure canvas has focus when entering measurement mode
+        self.canvas.setFocus()
+        
+        # Add visual indicator that canvas is ready for keyboard input
+        if mode == 'width':
+            self.auto_status.setText("Herramienta Ancho activa - Presiona 'A' para auto-snap")
+            self.auto_status.setStyleSheet("color: purple; font-style: italic; font-weight: bold;")
     
     def clear_current_measurements(self):
         """Clear measurements ONLY for current PK including reference line"""
@@ -654,41 +706,72 @@ class InteractiveProfileViewer(QDialog):
     
     
     def on_canvas_click(self, event):
-        """Handle canvas click for measurements with different snap behaviors"""
+        """Handle canvas click - ensure focus is maintained"""
         if not event.inaxes or not self.measurement_mode:
             return
         
+        # Ensure canvas maintains focus after click
+        self.canvas.setFocus()
+        
+        # Rest of the method remains the same as the fixed version...
         x_click = event.xdata
         current_pk = self.profiles_data[self.current_profile_index]['pk']
         
         if self.measurement_mode == 'crown' or self.measurement_mode == 'lama':
-            # 🎯 Crown and LAMA use TERRAIN snap
+            # Crown and LAMA use TERRAIN snap
             terrain_point = self.find_terrain_snap_point(x_click)
             if not terrain_point:
                 return
             snap_x, snap_y = terrain_point
             
         elif self.measurement_mode == 'width':
-            # 🔥 Width measurements use ONLY REFERENCE LINE snap
-            ref_point = self.find_nearest_terrain_point(x_click)  # This now only returns ref line
-            if not ref_point:
-                # Show message that crown is required for width measurement
+            # Width measurements: Check if A key is pressed for auto-snap
+            crown_elevation = None
+            crown_x = 0
+            
+            # Get crown reference data
+            if current_pk in self.saved_measurements and 'crown' in self.saved_measurements[current_pk]:
+                crown_elevation = self.saved_measurements[current_pk]['crown']['y']
+                crown_x = self.saved_measurements[current_pk]['crown']['x']
+            elif self.current_crown_point:
+                crown_elevation = self.current_crown_point[1]
+                crown_x = self.current_crown_point[0]
+            
+            if crown_elevation is None:
                 from qgis.PyQt.QtWidgets import QMessageBox
                 QMessageBox.information(
                     self,
                     "Referencia requerida",
                     "Debe definir una Cota Coronamiento antes de medir el ancho.\n"
-                    "El ancho solo se puede medir sobre la línea de referencia."
+                    "El ancho se puede medir sobre la línea de referencia o con snap automático (tecla A)."
                 )
                 return
-            snap_x, snap_y = ref_point
             
+            # Determine snap behavior based on A key
+            if self._key_A_pressed:
+                # AUTO-SNAP: Find intersection of crown elevation with terrain
+                direction = 'left' if x_click < crown_x else 'right'
+                profile = self.profiles_data[self.current_profile_index]
+                distances = profile.get('distances', [])
+                elevations = profile.get('elevations', [])
+                valid_data = [(d, e) for d, e in zip(distances, elevations) if e != -9999]
+                boundary = self.find_boundary_simple(valid_data, crown_x, crown_elevation, direction)
+                
+                if boundary:
+                    snap_x, snap_y = boundary
+                else:
+                    # Fallback to manual reference line if auto-snap fails
+                    snap_x, snap_y = (x_click, crown_elevation)
+            else:
+                # MANUAL SNAP: Use reference line (original behavior)
+                snap_x, snap_y = (x_click, crown_elevation)
+                
         else:
             return
         
-        # Rest of the function remains the same...
+        # Process the measurement based on mode
         if self.measurement_mode == 'crown':
-            # Save crown point for current PK only
+            # Save crown point for current PK
             self.current_crown_point = (snap_x, snap_y)
             
             # Update saved measurements
@@ -701,7 +784,7 @@ class InteractiveProfileViewer(QDialog):
             
             self.crown_result.setText(f"Cota Coronamiento: {snap_y:.2f} m")
             
-            # Auto-detection remains the same...
+            # Auto-detection for width (unchanged from original)
             if self.auto_width_detection:
                 self.auto_status.setText("🔍 Detectando ancho automáticamente...")
                 self.auto_status.setStyleSheet("color: blue; font-style: italic;")
@@ -734,11 +817,13 @@ class InteractiveProfileViewer(QDialog):
                     self.auto_status.setStyleSheet("color: orange; font-style: italic;")
             
         elif self.measurement_mode == 'width':
-            # Manual width measurement - ONLY on reference line
+            # Add point to width measurement
             self.current_width_points.append((snap_x, snap_y))
             
             if len(self.current_width_points) == 1:
-                self.width_result.setText(f"Punto 1: X={snap_x:.1f}m, Y={snap_y:.2f}m (Ref)")
+                # Show feedback for first point
+                snap_type = "Auto-snap" if self._key_A_pressed else "Ref"
+                self.width_result.setText(f"Punto 1: X={snap_x:.1f}m, Y={snap_y:.2f}m ({snap_type})")
                 
             elif len(self.current_width_points) == 2:
                 # Calculate width between two points
@@ -746,7 +831,7 @@ class InteractiveProfileViewer(QDialog):
                 p2 = self.current_width_points[1]
                 width = abs(p2[0] - p1[0])
                 
-                # Save measurement for current PK only
+                # Save measurement for current PK
                 if current_pk not in self.saved_measurements:
                     self.saved_measurements[current_pk] = {}
                 self.saved_measurements[current_pk]['width'] = {
@@ -757,7 +842,7 @@ class InteractiveProfileViewer(QDialog):
                 }
                 
                 self.width_result.setText(f"Ancho medido: {width:.2f} m (manual)")
-                self.auto_status.setText("✏️ Medición manual en referencia")
+                self.auto_status.setText("✏️ Medición manual completada")
                 self.auto_status.setStyleSheet("color: blue; font-style: italic;")
                 
                 # Reset for next measurement
@@ -774,6 +859,7 @@ class InteractiveProfileViewer(QDialog):
             
             self.lama_result.setText(f"Cota LAMA: {snap_y:.2f} m (manual)")
         
+        # Update the display
         self.update_profile_display()
     
     def update_revancha_calculation(self):
