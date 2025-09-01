@@ -142,6 +142,9 @@ class InteractiveProfileViewer(QDialog):
         # Initialize key state BEFORE UI creation
         self._key_A_pressed = False
         
+        # 🆕 MODO DE OPERACIÓN: "revancha" o "ancho_proyectado"
+        self.operation_mode = "revancha"  # Modo por defecto
+        
         self.setWindowTitle("Visualizador Interactivo de Perfiles")
         self.setModal(True)
         self.resize(1200, 800)
@@ -363,14 +366,47 @@ class InteractiveProfileViewer(QDialog):
         
         # Initialize with first profile
         if self.profiles_data:
+            # 🆕 Initialize UI for default operation mode
+            self.update_ui_for_operation_mode()
             self.update_profile_display()
             # Set initial zoom to full extent
             self.toolbar.zoom_to_profile_extent()
     
     def create_control_panel(self):
-        """Create navigation control panel"""
+        """Create navigation control panel with operation mode toggle"""
         group = QGroupBox("🧭 Navegación de Perfiles")
-        layout = QHBoxLayout()
+        layout = QVBoxLayout()  # Cambiar a vertical para incluir el toggle
+        
+        # 🆕 TOGGLE DE MODO DE OPERACIÓN (PRIMERA FILA)
+        mode_layout = QHBoxLayout()
+        mode_label = QLabel("Modo de Operación:")
+        mode_label.setFont(QFont("Arial", 10, QFont.Bold))
+        
+        self.mode_toggle_btn = QPushButton("🔧 REVANCHA")
+        self.mode_toggle_btn.setCheckable(True)
+        self.mode_toggle_btn.setChecked(False)  # False = Revancha, True = Ancho Proyectado
+        self.mode_toggle_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2196F3; 
+                color: white; 
+                font-weight: bold; 
+                padding: 8px 16px; 
+                border-radius: 5px; 
+                border: 2px solid #1976D2;
+            }
+            QPushButton:checked {
+                background-color: #FF9800; 
+                border: 2px solid #F57C00;
+            }
+        """)
+        self.mode_toggle_btn.clicked.connect(self.toggle_operation_mode)
+        
+        mode_layout.addWidget(mode_label)
+        mode_layout.addWidget(self.mode_toggle_btn)
+        mode_layout.addStretch()
+        
+        # NAVEGACIÓN (SEGUNDA FILA)
+        nav_layout = QHBoxLayout()
         
         # Previous/Next buttons
         self.prev_btn = QPushButton("◀ Anterior")
@@ -392,11 +428,15 @@ class InteractiveProfileViewer(QDialog):
         # Profile counter
         self.profile_counter = QLabel(f"1 / {len(self.profiles_data)}")
         
-        layout.addWidget(self.prev_btn)
-        layout.addWidget(self.pk_slider, stretch=1)
-        layout.addWidget(self.next_btn)
-        layout.addWidget(self.current_pk_label)
-        layout.addWidget(self.profile_counter)
+        nav_layout.addWidget(self.prev_btn)
+        nav_layout.addWidget(self.pk_slider, stretch=1)
+        nav_layout.addWidget(self.next_btn)
+        nav_layout.addWidget(self.current_pk_label)
+        nav_layout.addWidget(self.profile_counter)
+        
+        # Ensamblar layout
+        layout.addLayout(mode_layout)
+        layout.addLayout(nav_layout)
         
         group.setLayout(layout)
         return group
@@ -484,6 +524,65 @@ class InteractiveProfileViewer(QDialog):
         group.setLayout(layout)
         return group
     
+    def toggle_operation_mode(self):
+        """🆕 Toggle between Revancha and Ancho Proyectado modes"""
+        if self.mode_toggle_btn.isChecked():
+            # Cambiar a modo Ancho Proyectado
+            self.operation_mode = "ancho_proyectado"
+            self.mode_toggle_btn.setText("📐 ANCHO PROYECTADO")
+        else:
+            # Cambiar a modo Revancha
+            self.operation_mode = "revancha"
+            self.mode_toggle_btn.setText("🔧 REVANCHA")
+        
+        # Reset current measurement mode when switching operation modes
+        self.measurement_mode = None
+        self.crown_btn.setChecked(False)
+        self.width_btn.setChecked(False)
+        self.lama_btn.setChecked(False)
+        self.canvas.setCursor(Qt.ArrowCursor)
+        
+        # Update the UI to reflect new mode
+        self.update_ui_for_operation_mode()
+        self.update_profile_display()
+        
+        # Show feedback to user
+        mode_name = "Ancho Proyectado" if self.operation_mode == "ancho_proyectado" else "Revancha"
+        self.auto_status.setText(f"🔄 Cambiado a modo: {mode_name}")
+        self.auto_status.setStyleSheet("color: blue; font-weight: bold;")
+    
+    def update_ui_for_operation_mode(self):
+        """🆕 Update UI elements based on current operation mode"""
+        current_pk = self.profiles_data[self.current_profile_index]['pk']
+        
+        if self.operation_mode == "ancho_proyectado":
+            # Modo Ancho Proyectado: Solo mostrar Ancho
+            self.crown_result.setText("Cota Lama: --")  # Cambiar label
+            self.width_result.setText("Ancho Proyectado: --")
+            self.lama_result.setText("")  # Ocultar
+            self.revancha_result.setText("")  # Ocultar
+            
+            # Cambiar texto de botones
+            self.crown_btn.setText("📍 Seleccionar Lama")
+            self.width_btn.setText("📏 Medir Ancho Proyectado")
+            self.lama_btn.setVisible(False)  # Ocultar botón LAMA manual
+            
+        else:
+            # Modo Revancha: UI original
+            self.crown_result.setText("Cota Coronamiento: --")
+            self.width_result.setText("Ancho medido: --")
+            self.lama_result.setText("Cota LAMA: --")
+            self.revancha_result.setText("Revancha: --")
+            
+            # Restaurar texto de botones
+            self.crown_btn.setText("📍 Cota Coronamiento")
+            self.width_btn.setText("📏 Medir Ancho")
+            self.lama_btn.setVisible(True)  # Mostrar botón LAMA manual
+            self.lama_btn.setText("🟡 Modificar LAMA")
+        
+        # Recargar mediciones para el PK actual
+        self.load_profile_measurements()
+    
     def toggle_auto_detection(self):
         """Toggle automatic width detection"""
         self.auto_width_detection = self.auto_detect_btn.isChecked()
@@ -543,34 +642,59 @@ class InteractiveProfileViewer(QDialog):
         self.crown_btn.setChecked(False)
         self.width_btn.setChecked(False)
         self.lama_btn.setChecked(False)
-        self.crown_result.setText("Cota Coronamiento: --")
-        self.width_result.setText("Ancho medido: --")
-        self.lama_result.setText("Cota LAMA: --")
-        self.revancha_result.setText("Revancha: --")
+        
+        # Clear labels based on operation mode
+        if self.operation_mode == "ancho_proyectado":
+            self.crown_result.setText("Cota Lama: --")
+            self.width_result.setText("Ancho Proyectado: --")
+            self.lama_result.setText("")
+            self.revancha_result.setText("")
+        else:
+            self.crown_result.setText("Cota Coronamiento: --")
+            self.width_result.setText("Ancho medido: --")
+            self.lama_result.setText("Cota LAMA: --")
+            self.revancha_result.setText("Revancha: --")
+            
         self.canvas.setCursor(Qt.ArrowCursor)
         
         # This will remove the reference line too since crown is cleared
         self.update_profile_display()
     
     def find_nearest_terrain_point(self, x_click):
-        """ONLY snap to horizontal reference line for width measurements"""
+        """Find nearest point - different logic for each mode"""
         current_pk = self.profiles_data[self.current_profile_index]['pk']
         
-        # ONLY REFERENCE LINE SNAP - No terrain snap for width measurements
-        crown_elevation = None
-        if current_pk in self.saved_measurements and 'crown' in self.saved_measurements[current_pk]:
-            crown_elevation = self.saved_measurements[current_pk]['crown']['y']
-        elif self.current_crown_point:
-            crown_elevation = self.current_crown_point[1]
-        
-        # Return point on reference line or None
-        if crown_elevation is not None:
-            # Ensure click is within reasonable range (-50 to +50)
-            if -50 <= x_click <= 50:
-                return (x_click, crown_elevation)  # Exact X click, crown Y
-        
-        # NO TERRAIN SNAP - Return None if no reference line
-        return None
+        if self.operation_mode == "ancho_proyectado":
+            # En modo Ancho Proyectado, buscar intersección con línea +3m si existe
+            lama_elevation = None
+            if current_pk in self.saved_measurements and 'lama_selected' in self.saved_measurements[current_pk]:
+                lama_elevation = self.saved_measurements[current_pk]['lama_selected']['y'] + 3.0
+            elif self.current_crown_point:
+                lama_elevation = self.current_crown_point[1] + 3.0
+                
+            if lama_elevation is not None:
+                # Use improved snap for reference line
+                return self.find_reference_line_snap_point(x_click, lama_elevation)
+            else:
+                # No reference line, use terrain snap
+                return self.find_terrain_snap_point(x_click)
+                
+        else:
+            # Modo Revancha: ONLY snap to horizontal reference line for width measurements
+            crown_elevation = None
+            if current_pk in self.saved_measurements and 'crown' in self.saved_measurements[current_pk]:
+                crown_elevation = self.saved_measurements[current_pk]['crown']['y']
+            elif self.current_crown_point:
+                crown_elevation = self.current_crown_point[1]
+            
+            # Return point on reference line or None
+            if crown_elevation is not None:
+                # Ensure click is within reasonable range (-50 to +50)
+                if -50 <= x_click <= 50:
+                    return (x_click, crown_elevation)  # Exact X click, crown Y
+            
+            # NO TERRAIN SNAP - Return None if no reference line
+            return None
     
     def find_terrain_snap_point(self, x_click):
         """Find closest point ONLY on terrain natural (for crown and lama)"""
@@ -598,6 +722,9 @@ class InteractiveProfileViewer(QDialog):
     
     def detect_road_width_automatically(self, crown_x, crown_y):
         """IMPROVED: Auto-detect full road width with better algorithm"""
+        print(f"🔧 DEBUG: detect_road_width_automatically called with crown_x={crown_x}, crown_y={crown_y}")
+        print(f"🔧 DEBUG: Current operation mode: {self.operation_mode}")
+        
         profile = self.profiles_data[self.current_profile_index]
         distances = profile.get('distances', [])
         elevations = profile.get('elevations', [])
@@ -606,16 +733,67 @@ class InteractiveProfileViewer(QDialog):
         valid_data = [(d, e) for d, e in zip(distances, elevations) if e != -9999]
         valid_data.sort(key=lambda x: x[0])  # Sort by distance
         
+        print(f"🔧 DEBUG: Valid data points: {len(valid_data)}")
+        
         if len(valid_data) < 20:  # Need enough points
             print(f"❌ Not enough data points: {len(valid_data)}")
             return None, None
         
         print(f"🔍 Auto-detecting from {len(valid_data)} points, crown at X={crown_x:.2f}")
         
+        # 🆕 USAR DIFERENTES ALGORITMOS SEGÚN EL MODO
+        if self.operation_mode == "ancho_proyectado":
+            return self.detect_ancho_proyectado_boundaries(valid_data, crown_x, crown_y)
+        else:
+            # Lógica original para modo Revancha
+            return self.detect_revancha_boundaries(valid_data, crown_x, crown_y)
+    
+    def detect_ancho_proyectado_boundaries(self, valid_data, reference_x, reference_y):
+        """🆕 Nueva lógica para Ancho Proyectado: buscar TODAS las intersecciones"""
+        print(f"🎯 ANCHO PROYECTADO: Buscando intersecciones a elevación {reference_y:.3f}m")
+        
+        # Buscar TODAS las intersecciones con la línea horizontal de referencia
+        all_intersections = []
+        
+        for i in range(len(valid_data) - 1):
+            p1_x, p1_y = valid_data[i]
+            p2_x, p2_y = valid_data[i + 1]
+            
+            # Check if reference elevation is between these two points
+            if (p1_y <= reference_y <= p2_y) or (p2_y <= reference_y <= p1_y):
+                # Linear interpolation to find exact X coordinate
+                if abs(p2_y - p1_y) > 0.001:  # Avoid division by zero
+                    ratio = (reference_y - p1_y) / (p2_y - p1_y)
+                    intersection_x = p1_x + ratio * (p2_x - p1_x)
+                    all_intersections.append((intersection_x, reference_y))
+                    print(f"  ✅ Intersección encontrada en X={intersection_x:.2f}")
+        
+        if len(all_intersections) < 2:
+            print(f"  ❌ Se necesitan al menos 2 intersecciones, encontradas: {len(all_intersections)}")
+            return None, None
+        
+        print(f"  🔍 Total intersecciones encontradas: {len(all_intersections)}")
+        
+        # Encontrar la más cercana y más lejana al punto de referencia
+        distances_to_ref = [(abs(x - reference_x), (x, y)) for x, y in all_intersections]
+        distances_to_ref.sort(key=lambda x: x[0])  # Sort by distance to reference
+        
+        closest = distances_to_ref[0][1]  # Más cercana
+        furthest = distances_to_ref[-1][1]  # Más lejana
+        
+        print(f"  ✅ Boundary más cercana: X={closest[0]:.2f} (distancia: {distances_to_ref[0][0]:.2f}m)")
+        print(f"  ✅ Boundary más lejana: X={furthest[0]:.2f} (distancia: {distances_to_ref[-1][0]:.2f}m)")
+        
+        return closest, furthest
+    
+    def detect_revancha_boundaries(self, valid_data, crown_x, crown_y):
+        """🔧 Lógica original para modo Revancha (izquierda/derecha)"""
+        print(f"🎯 REVANCHA: Buscando boundaries izquierda/derecha desde corona")
+        
         # DEBUG - Add this line
         self.debug_profile_data(crown_x, crown_y)
         
-        # Find left and right boundaries using simpler approach
+        # Find left and right boundaries using original approach
         left_boundary = self.find_boundary_simple(valid_data, crown_x, crown_y, 'left')
         right_boundary = self.find_boundary_simple(valid_data, crown_x, crown_y, 'right')
         
@@ -625,7 +803,7 @@ class InteractiveProfileViewer(QDialog):
         else:
             print("❌ Could not find boundaries")
             return None, None
-        
+    
     def find_boundary_simple(self, valid_data, crown_x, crown_y, direction):
         """Find boundary by exact horizontal line intersection at crown elevation"""
         
@@ -669,7 +847,24 @@ class InteractiveProfileViewer(QDialog):
         
         if not intersections:
             print(f"    ❌ No exact intersections found at elevation {crown_y:.3f}m")
-            return None
+            print(f"    🔍 Searching for closest point instead...")
+            
+            # Fallback: find closest point to target elevation
+            closest_point = None
+            min_elevation_diff = float('inf')
+            
+            for point_x, point_y in search_points:
+                elevation_diff = abs(point_y - crown_y)
+                if elevation_diff < min_elevation_diff:
+                    min_elevation_diff = elevation_diff
+                    closest_point = (point_x, point_y)
+            
+            if closest_point and min_elevation_diff < 1.0:  # Within 1 meter tolerance
+                print(f"    ✅ Using closest point: X={closest_point[0]:.2f}, Y={closest_point[1]:.3f} (diff: {min_elevation_diff:.3f}m)")
+                return closest_point
+            else:
+                print(f"    ❌ No suitable point found (closest diff: {min_elevation_diff:.3f}m)")
+                return None
         
         # Return the furthest intersection (extended boundary)
         if direction == 'left':
@@ -717,6 +912,14 @@ class InteractiveProfileViewer(QDialog):
         x_click = event.xdata
         current_pk = self.profiles_data[self.current_profile_index]['pk']
         
+        # 🆕 LÓGICA ESPECÍFICA SEGÚN MODO DE OPERACIÓN
+        if self.operation_mode == "ancho_proyectado":
+            return self.handle_ancho_proyectado_click(x_click, current_pk)
+        else:
+            return self.handle_revancha_click(x_click, current_pk)
+    
+    def handle_revancha_click(self, x_click, current_pk):
+        """🔧 Lógica original para modo Revancha"""
         if self.measurement_mode == 'crown' or self.measurement_mode == 'lama':
             # Crown and LAMA use TERRAIN snap
             terrain_point = self.find_terrain_snap_point(x_click)
@@ -862,6 +1065,216 @@ class InteractiveProfileViewer(QDialog):
         # Update the display
         self.update_profile_display()
     
+    def handle_ancho_proyectado_click(self, x_click, current_pk):
+        """🆕 Lógica específica para modo Ancho Proyectado"""
+        
+        if self.measurement_mode == 'crown':
+            # En modo Ancho Proyectado, "crown" es realmente seleccionar la Lama
+            terrain_point = self.find_terrain_snap_point(x_click)
+            if not terrain_point:
+                return
+            snap_x, snap_y = terrain_point
+            
+            # Guardar como "lama_selected" en lugar de crown
+            self.current_crown_point = (snap_x, snap_y)
+            
+            if current_pk not in self.saved_measurements:
+                self.saved_measurements[current_pk] = {}
+            self.saved_measurements[current_pk]['lama_selected'] = {
+                'x': snap_x,
+                'y': snap_y
+            }
+            
+            self.crown_result.setText(f"Cota Lama: {snap_y:.2f} m")
+            
+            # 🆕 Auto-detection: MISMA LÓGICA QUE REVANCHA pero en línea +3m
+            print(f"🐛 DEBUG: auto_width_detection = {self.auto_width_detection}")
+            if self.auto_width_detection:
+                print(f"🐛 DEBUG: Iniciando auto-detección en Ancho Proyectado")
+                print(f"🐛 DEBUG: Lama point = ({snap_x:.2f}, {snap_y:.2f})")
+                
+                self.auto_status.setText("🔍 Detectando ancho proyectado automáticamente...")
+                self.auto_status.setStyleSheet("color: blue; font-style: italic;")
+                
+                reference_elevation = snap_y + 3.0  # 3 metros arriba de la lama
+                print(f"🐛 DEBUG: Reference elevation +3m = {reference_elevation:.2f}")
+                print(f"🐛 DEBUG: About to call detect_road_width_automatically with snap_x={snap_x:.2f}, reference_elevation={reference_elevation:.2f}")
+                
+                # 🎯 USAR LA MISMA FUNCIÓN ROBUSTA QUE REVANCHA
+                left_boundary, right_boundary = self.detect_road_width_automatically(snap_x, reference_elevation)
+                print(f"🐛 DEBUG: Boundaries returned = {left_boundary}, {right_boundary}")
+                
+                if left_boundary and right_boundary:
+                    print("🐛 DEBUG: ✅ Auto-detección exitosa")
+                    # Automatically set width measurement
+                    self.current_width_points = [left_boundary, right_boundary]
+                    
+                    # Calculate width
+                    width = abs(right_boundary[0] - left_boundary[0])
+                    print(f"🐛 DEBUG: Width calculated = {width:.2f}m")
+                    
+                    # Save auto-detected measurement
+                    self.saved_measurements[current_pk]['width'] = {
+                        'p1': left_boundary,
+                        'p2': right_boundary,
+                        'distance': width,
+                        'auto_detected': True,
+                        'reference_elevation': reference_elevation
+                    }
+                    
+                    self.width_result.setText(f"Ancho Proyectado auto: {width:.2f} m")
+                    self.auto_status.setText("✅ Ancho proyectado detectado automáticamente")
+                    self.auto_status.setStyleSheet("color: green; font-style: italic;")
+                    
+                    # 🆕 ACTIVAR AUTOMÁTICAMENTE MODO WIDTH para permitir ajustes
+                    self.set_measurement_mode('width')
+                    
+                else:
+                    print("🐛 DEBUG: ❌ Auto-detección falló")
+                    self.auto_status.setText("⚠️ No se pudo detectar ancho automáticamente")
+                    self.auto_status.setStyleSheet("color: orange; font-style: italic;")
+            else:
+                print("🐛 DEBUG: Auto-width detection está DESACTIVADO")
+                    
+        elif self.measurement_mode == 'width':
+            # En modo Ancho Proyectado, el width se mide sobre la línea de referencia (+3m)
+            lama_elevation = None
+            lama_x = 0
+            
+            # Obtener datos de lama seleccionada
+            if current_pk in self.saved_measurements and 'lama_selected' in self.saved_measurements[current_pk]:
+                lama_data = self.saved_measurements[current_pk]['lama_selected']
+                lama_elevation = lama_data['y'] + 3.0  # 3 metros arriba
+                lama_x = lama_data['x']
+            elif self.current_crown_point:
+                lama_elevation = self.current_crown_point[1] + 3.0  # 3 metros arriba
+                lama_x = self.current_crown_point[0]
+                
+            if lama_elevation is None:
+                from qgis.PyQt.QtWidgets import QMessageBox
+                QMessageBox.information(
+                    self,
+                    "Lama requerida",
+                    "Debe seleccionar un punto de Lama antes de medir el ancho proyectado.\n"
+                    "El ancho se medirá 3 metros arriba de la cota Lama."
+                )
+                return
+                
+            # Determine snap behavior based on A key
+            if self._key_A_pressed:
+                # AUTO-SNAP: intersección con terreno a la altura de referencia
+                # 🔧 MEJORAR SNAP: buscar en radio alrededor del click
+                reference_snap_point = self.find_reference_line_snap_point(x_click, lama_elevation)
+                
+                if reference_snap_point:
+                    snap_x, snap_y = reference_snap_point
+                else:
+                    snap_x, snap_y = (x_click, lama_elevation)
+            else:
+                # MANUAL SNAP: usar línea de referencia
+                snap_x, snap_y = (x_click, lama_elevation)
+                
+            # Agregar punto a medición de ancho
+            self.current_width_points.append((snap_x, snap_y))
+            
+            if len(self.current_width_points) == 1:
+                snap_type = "Auto-snap" if self._key_A_pressed else "Ref"
+                self.width_result.setText(f"Punto 1: X={snap_x:.1f}m, Y={snap_y:.2f}m ({snap_type})")
+                
+            elif len(self.current_width_points) == 2:
+                p1 = self.current_width_points[0]
+                p2 = self.current_width_points[1]
+                width = abs(p2[0] - p1[0])
+                
+                if current_pk not in self.saved_measurements:
+                    self.saved_measurements[current_pk] = {}
+                self.saved_measurements[current_pk]['width'] = {
+                    'p1': p1,
+                    'p2': p2,
+                    'distance': width,
+                    'auto_detected': False,
+                    'reference_elevation': lama_elevation
+                }
+                
+                self.width_result.setText(f"Ancho Proyectado: {width:.2f} m (manual)")
+                self.auto_status.setText("✏️ Medición manual completada")
+                self.auto_status.setStyleSheet("color: blue; font-style: italic;")
+                
+                self.current_width_points = []
+        
+        # Update display
+        self.update_profile_display()
+    
+    def find_reference_line_snap_point(self, x_click, reference_elevation):
+        """🆕 Find snap point on reference line with terrain intersection in radius around click"""
+        profile = self.profiles_data[self.current_profile_index]
+        distances = profile.get('distances', [])
+        elevations = profile.get('elevations', [])
+        
+        valid_data = [(d, e) for d, e in zip(distances, elevations) if e != -9999]
+        if len(valid_data) < 10:
+            return None
+            
+        # 🎯 BUSCAR EN RADIO ALREDEDOR DEL CLICK (similar a modo Revancha)
+        search_radius = 5.0  # metros de radio de búsqueda
+        
+        # Filter points within search radius
+        nearby_points = [(d, e) for d, e in valid_data 
+                        if abs(d - x_click) <= search_radius]
+        
+        if not nearby_points:
+            # If no points in radius, find closest intersection
+            return self.find_closest_terrain_intersection(x_click, reference_elevation, valid_data)
+        
+        # Find intersections within the search radius
+        intersections = []
+        nearby_points.sort(key=lambda x: x[0])  # Sort by distance
+        
+        for i in range(len(nearby_points) - 1):
+            p1_x, p1_y = nearby_points[i]
+            p2_x, p2_y = nearby_points[i + 1]
+            
+            # Check if reference elevation is between these two points
+            if (p1_y <= reference_elevation <= p2_y) or (p2_y <= reference_elevation <= p1_y):
+                # Linear interpolation to find exact X coordinate
+                if abs(p2_y - p1_y) > 0.001:  # Avoid division by zero
+                    ratio = (reference_elevation - p1_y) / (p2_y - p1_y)
+                    intersection_x = p1_x + ratio * (p2_x - p1_x)
+                    
+                    # Calculate distance from click point
+                    distance_from_click = abs(intersection_x - x_click)
+                    intersections.append((intersection_x, reference_elevation, distance_from_click))
+        
+        if intersections:
+            # Return closest intersection to click point
+            closest = min(intersections, key=lambda x: x[2])
+            return (closest[0], closest[1])
+        
+        # Fallback: no intersections found, return point on reference line at click X
+        return (x_click, reference_elevation)
+    
+    def find_closest_terrain_intersection(self, x_click, reference_elevation, valid_data):
+        """🔧 Fallback function to find closest intersection when no points in radius"""
+        intersections = []
+        
+        for i in range(len(valid_data) - 1):
+            p1_x, p1_y = valid_data[i]
+            p2_x, p2_y = valid_data[i + 1]
+            
+            # Check if reference elevation is between these two points
+            if (p1_y <= reference_elevation <= p2_y) or (p2_y <= reference_elevation <= p1_y):
+                if abs(p2_y - p1_y) > 0.001:
+                    ratio = (reference_elevation - p1_y) / (p2_y - p1_y)
+                    intersection_x = p1_x + ratio * (p2_x - p1_x)
+                    distance_from_click = abs(intersection_x - x_click)
+                    intersections.append((intersection_x, reference_elevation, distance_from_click))
+        
+        if intersections:
+            closest = min(intersections, key=lambda x: x[2])
+            return (closest[0], closest[1])
+            
+        return None
+
     def update_revancha_calculation(self):
         """Calculate and update Revancha value (Crown - LAMA)"""
         current_pk = self.profiles_data[self.current_profile_index]['pk']
@@ -938,7 +1351,7 @@ class InteractiveProfileViewer(QDialog):
             self.update_profile_display()
     
     def load_profile_measurements(self):
-        """🔧 Load measurements specific to current PK including LAMA and Revancha"""
+        """🔧 Load measurements specific to current PK including different modes"""
         current_pk = self.profiles_data[self.current_profile_index]['pk']
         
         # Clear current temporary measurements
@@ -949,45 +1362,78 @@ class InteractiveProfileViewer(QDialog):
         if current_pk in self.saved_measurements:
             measurements = self.saved_measurements[current_pk]
             
-            # Load crown measurement - 🔧 SIN (X: value)
-            if 'crown' in measurements:
-                crown_data = measurements['crown']
-                self.current_crown_point = (crown_data['x'], crown_data['y'])
-                self.crown_result.setText(f"Cota Coronamiento: {crown_data['y']:.2f} m")  # 🔧 QUITADO (X: ...)
-            else:
-                self.crown_result.setText("Cota Coronamiento: --")
-            
-            # Load width measurement - 🔧 MEJORAR LABELS
-            if 'width' in measurements:
-                width_data = measurements['width']
-                auto_detected = width_data.get('auto_detected', False)
-                
-                if auto_detected:
-                    self.width_result.setText(f"Ancho medido: {width_data['distance']:.2f} m (auto-detectado)")
+            if self.operation_mode == "ancho_proyectado":
+                # Modo Ancho Proyectado
+                if 'lama_selected' in measurements:
+                    lama_data = measurements['lama_selected']
+                    self.current_crown_point = (lama_data['x'], lama_data['y'])
+                    self.crown_result.setText(f"Cota Lama: {lama_data['y']:.2f} m")
                 else:
-                    self.width_result.setText(f"Ancho medido: {width_data['distance']:.2f} m (manual)")
+                    self.crown_result.setText("Cota Lama: --")
                 
-                # Update status
-                if auto_detected:
-                    self.auto_status.setText("✅ Ancho detectado automáticamente")
-                    self.auto_status.setStyleSheet("color: green; font-style: italic;")
+                # Load width measurement
+                if 'width' in measurements:
+                    width_data = measurements['width']
+                    auto_detected = width_data.get('auto_detected', False)
+                    
+                    if auto_detected:
+                        self.width_result.setText(f"Ancho Proyectado: {width_data['distance']:.2f} m (auto)")
+                        self.auto_status.setText("✅ Ancho proyectado calculado (+3m)")
+                        self.auto_status.setStyleSheet("color: green; font-style: italic;")
+                    else:
+                        self.width_result.setText(f"Ancho Proyectado: {width_data['distance']:.2f} m (manual)")
+                        self.auto_status.setText("✏️ Medición manual")
+                        self.auto_status.setStyleSheet("color: blue; font-style: italic;")
                 else:
-                    self.auto_status.setText("✏️ Medición manual")
-                    self.auto_status.setStyleSheet("color: blue; font-style: italic;")
+                    self.width_result.setText("Ancho Proyectado: --")
+                    self.auto_status.setText("Auto-detección activada" if self.auto_width_detection else "Modo manual activado")
+                    self.auto_status.setStyleSheet("color: green; font-style: italic;" if self.auto_width_detection else "color: orange; font-style: italic;")
+                    
             else:
-                self.width_result.setText("Ancho medido: --")
-                self.auto_status.setText("Auto-detección activada" if self.auto_width_detection else "Modo manual activado")
-                self.auto_status.setStyleSheet("color: green; font-style: italic;" if self.auto_width_detection else "color: orange; font-style: italic;")
+                # Modo Revancha (lógica original)
+                if 'crown' in measurements:
+                    crown_data = measurements['crown']
+                    self.current_crown_point = (crown_data['x'], crown_data['y'])
+                    self.crown_result.setText(f"Cota Coronamiento: {crown_data['y']:.2f} m")
+                else:
+                    self.crown_result.setText("Cota Coronamiento: --")
                 
+                # Load width measurement
+                if 'width' in measurements:
+                    width_data = measurements['width']
+                    auto_detected = width_data.get('auto_detected', False)
+                    
+                    if auto_detected:
+                        self.width_result.setText(f"Ancho medido: {width_data['distance']:.2f} m (auto-detectado)")
+                    else:
+                        self.width_result.setText(f"Ancho medido: {width_data['distance']:.2f} m (manual)")
+                    
+                    if auto_detected:
+                        self.auto_status.setText("✅ Ancho detectado automáticamente")
+                        self.auto_status.setStyleSheet("color: green; font-style: italic;")
+                    else:
+                        self.auto_status.setText("✏️ Medición manual")
+                        self.auto_status.setStyleSheet("color: blue; font-style: italic;")
+                else:
+                    self.width_result.setText("Ancho medido: --")
+                    self.auto_status.setText("Auto-detección activada" if self.auto_width_detection else "Modo manual activado")
+                    self.auto_status.setStyleSheet("color: green; font-style: italic;" if self.auto_width_detection else "color: orange; font-style: italic;")
+                    
         else:
             # No measurements for this PK
-            self.crown_result.setText("Cota Coronamiento: --")
-            self.width_result.setText("Ancho medido: --")
+            if self.operation_mode == "ancho_proyectado":
+                self.crown_result.setText("Cota Lama: --")
+                self.width_result.setText("Ancho Proyectado: --")
+            else:
+                self.crown_result.setText("Cota Coronamiento: --")
+                self.width_result.setText("Ancho medido: --")
+                
             self.auto_status.setText("Auto-detección activada" if self.auto_width_detection else "Modo manual activado")
             self.auto_status.setStyleSheet("color: green; font-style: italic;" if self.auto_width_detection else "color: orange; font-style: italic;")
         
-        # 🆕 Update LAMA and Revancha (always recalculate)
-        self.update_revancha_calculation()
+        # 🆕 Update LAMA and Revancha (only in Revancha mode)
+        if self.operation_mode == "revancha":
+            self.update_revancha_calculation()
     
     def update_profile_display(self):
         """Update the profile visualization including LAMA points and reference lines"""
@@ -1028,65 +1474,118 @@ class InteractiveProfileViewer(QDialog):
         self.ax.axvline(x=0, color='red', linestyle='--', linewidth=1.8, alpha=0.8, 
                     label='Eje de Alineación')
         
-        # 🆕 REFERENCE LINES - Draw BEFORE measurements for better layering
-        crown_elevation = None
-        if current_pk in self.saved_measurements and 'crown' in self.saved_measurements[current_pk]:
-            crown_elevation = self.saved_measurements[current_pk]['crown']['y']
-        elif self.current_crown_point:
-            crown_elevation = self.current_crown_point[1]
-        
-        if crown_elevation is not None:
-            x_range = [x_min, x_max]  # Usar rangos específicos del muro
+        # 🆕 REFERENCE LINES - Different logic based on operation mode
+        if self.operation_mode == "ancho_proyectado":
+            # Modo Ancho Proyectado: Línea en lama, línea +2m (visual) y línea +3m (medición)
+            lama_elevation = None
             
-            # 🔥 MAIN REFERENCE LINE - MÁS INTENSA
-            y_ref = [crown_elevation, crown_elevation]
-            self.ax.plot(x_range, y_ref, '--', color='orange', linewidth=2.5, 
-                        alpha=1.0, label=f'Ref. Coronamiento: {crown_elevation:.2f}m',
-                        zorder=3)
+            # Get lama point (selected manually)
+            if current_pk in self.saved_measurements and 'lama_selected' in self.saved_measurements[current_pk]:
+                lama_elevation = self.saved_measurements[current_pk]['lama_selected']['y']
+            elif self.current_crown_point:
+                lama_elevation = self.current_crown_point[1]
+                
+            if lama_elevation is not None:
+                x_range = [x_min, x_max]
+                
+                # Línea en la lama (visual reference)
+                y_lama = [lama_elevation, lama_elevation]
+                self.ax.plot(x_range, y_lama, ':', color='yellow', linewidth=2.0, 
+                            alpha=0.8, label=f'Lama: {lama_elevation:.2f}m', zorder=2)
+                
+                # 🆕 Línea de ayuda visual (+2m) - MÁS TENUE
+                visual_elevation = lama_elevation + 2.0
+                y_visual = [visual_elevation, visual_elevation]
+                self.ax.plot(x_range, y_visual, ':', color='gray', linewidth=1.0, 
+                            alpha=0.4, label=f'Visual +2m: {visual_elevation:.2f}m', zorder=1)
+                
+                # Línea de referencia 3m arriba (para medición)
+                reference_elevation = lama_elevation + 3.0
+                y_ref = [reference_elevation, reference_elevation]
+                self.ax.plot(x_range, y_ref, '--', color='orange', linewidth=2.5, 
+                            alpha=1.0, label=f'Ref. +3m: {reference_elevation:.2f}m', zorder=3)
+        else:
+            # Modo Revancha: Línea de coronamiento y auxiliar
+            crown_elevation = None
+            if current_pk in self.saved_measurements and 'crown' in self.saved_measurements[current_pk]:
+                crown_elevation = self.saved_measurements[current_pk]['crown']['y']
+            elif self.current_crown_point:
+                crown_elevation = self.current_crown_point[1]
             
-            # 🆕 AUXILIARY LINE - 1 metro debajo, MÁS TENUE
-            aux_elevation = crown_elevation - 1.0  # 1 metro abajo
-            y_aux = [aux_elevation, aux_elevation]
-            self.ax.plot(x_range, y_aux, ':', color='gray', linewidth=1.5, 
-                        alpha=0.6, label=f'Auxiliar (-1m): {aux_elevation:.2f}m',
-                        zorder=2)
+            if crown_elevation is not None:
+                x_range = [x_min, x_max]
+                
+                # 🔥 MAIN REFERENCE LINE - MÁS INTENSA
+                y_ref = [crown_elevation, crown_elevation]
+                self.ax.plot(x_range, y_ref, '--', color='orange', linewidth=2.5, 
+                            alpha=1.0, label=f'Ref. Coronamiento: {crown_elevation:.2f}m',
+                            zorder=3)
+                
+                # 🆕 AUXILIARY LINE - 1 metro debajo, MÁS TENUE
+                aux_elevation = crown_elevation - 1.0  # 1 metro abajo
+                y_aux = [aux_elevation, aux_elevation]
+                self.ax.plot(x_range, y_aux, ':', color='gray', linewidth=1.5, 
+                            alpha=0.6, label=f'Auxiliar (-1m): {aux_elevation:.2f}m',
+                            zorder=2)
         
-        # 📏 Show SAVED measurements for current PK
+        # 📏 Show SAVED measurements for current PK - Different based on mode
         if current_pk in self.saved_measurements:
             measurements = self.saved_measurements[current_pk]
             
-            # Crown point
-            if 'crown' in measurements:
-                crown_data = measurements['crown']
-                self.ax.plot(crown_data['x'], crown_data['y'], 'ro', markersize=10, 
-                        label=f'Cota Coronamiento: {crown_data["y"]:.2f}m', zorder=4)
-            
-            # Width measurement with auto-detection indicator
-            if 'width' in measurements:
-                width_data = measurements['width']
-                p1, p2 = width_data['p1'], width_data['p2']
-                auto_detected = width_data.get('auto_detected', False)
+            if self.operation_mode == "ancho_proyectado":
+                # Modo Ancho Proyectado
+                if 'lama_selected' in measurements:
+                    lama_data = measurements['lama_selected']
+                    self.ax.plot(lama_data['x'], lama_data['y'], 'o', color='yellow', markersize=12,
+                            markeredgecolor='orange', markeredgewidth=2, 
+                            label=f'Lama Seleccionada: {lama_data["y"]:.2f}m', zorder=4)
                 
-                # Different colors for auto vs manual
-                color = 'lime' if auto_detected else 'magenta'
-                marker_size = 10 if auto_detected else 8
-                line_style = '-' if auto_detected else '--'
-                label_prefix = 'Auto' if auto_detected else 'Manual'
+                # Width measurement
+                if 'width' in measurements:
+                    width_data = measurements['width']
+                    p1, p2 = width_data['p1'], width_data['p2']
+                    auto_detected = width_data.get('auto_detected', False)
+                    
+                    color = 'lime' if auto_detected else 'magenta'
+                    marker_size = 10 if auto_detected else 8
+                    line_style = '-' if auto_detected else '--'
+                    label_prefix = 'Auto' if auto_detected else 'Manual'
+                    
+                    self.ax.plot([p1[0], p2[0]], [p1[1], p2[1]], 'o', color=color, markersize=marker_size, zorder=4)
+                    self.ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color=color, linestyle=line_style, 
+                            linewidth=2.5, alpha=0.9, label=f'Ancho {label_prefix}: {width_data["distance"]:.2f}m', zorder=4)
+            else:
+                # Modo Revancha (lógica original)
+                if 'crown' in measurements:
+                    crown_data = measurements['crown']
+                    self.ax.plot(crown_data['x'], crown_data['y'], 'ro', markersize=10, 
+                            label=f'Cota Coronamiento: {crown_data["y"]:.2f}m', zorder=4)
                 
-                # Draw points and line
-                self.ax.plot([p1[0], p2[0]], [p1[1], p2[1]], 'o', color=color, markersize=marker_size, zorder=4)
-                self.ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color=color, linestyle=line_style, 
-                        linewidth=2.5, alpha=0.9, label=f'{label_prefix}: {width_data["distance"]:.2f}m', zorder=4)
-            
-            # Manual LAMA point (overrides automatic)
-            if 'lama' in measurements:
-                lama_data = measurements['lama']
-                self.ax.plot(lama_data['x'], lama_data['y'], 'o', color='orange', markersize=12,
-                        markeredgecolor='red', markeredgewidth=2, 
-                        label=f'LAMA Manual: {lama_data["y"]:.2f}m', zorder=4)
+                # Width measurement with auto-detection indicator
+                if 'width' in measurements:
+                    width_data = measurements['width']
+                    p1, p2 = width_data['p1'], width_data['p2']
+                    auto_detected = width_data.get('auto_detected', False)
+                    
+                    color = 'lime' if auto_detected else 'magenta'
+                    marker_size = 10 if auto_detected else 8
+                    line_style = '-' if auto_detected else '--'
+                    label_prefix = 'Auto' if auto_detected else 'Manual'
+                    
+                    self.ax.plot([p1[0], p2[0]], [p1[1], p2[1]], 'o', color=color, markersize=marker_size, zorder=4)
+                    self.ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color=color, linestyle=line_style, 
+                            linewidth=2.5, alpha=0.9, label=f'{label_prefix}: {width_data["distance"]:.2f}m', zorder=4)
+                
+                # Manual LAMA point (overrides automatic)
+                if 'lama' in measurements:
+                    lama_data = measurements['lama']
+                    self.ax.plot(lama_data['x'], lama_data['y'], 'o', color='orange', markersize=12,
+                            markeredgecolor='red', markeredgewidth=2, 
+                            label=f'LAMA Manual: {lama_data["y"]:.2f}m', zorder=4)
         
-        # Show automatic LAMA points (only if no manual override)
-        if current_pk not in self.saved_measurements or 'lama' not in self.saved_measurements[current_pk]:
+        # Show automatic LAMA points (only in Revancha mode and if no manual override)
+        if (self.operation_mode == "revancha" and 
+            (current_pk not in self.saved_measurements or 'lama' not in self.saved_measurements[current_pk])):
             lama_points = profile.get('lama_points', [])
             if lama_points:
                 for lama_point in lama_points:
@@ -1122,10 +1621,29 @@ class InteractiveProfileViewer(QDialog):
             # Filter elevations within the display range for better Y scaling
             relevant_elevations = [e for d, e in valid_data if x_min <= d <= x_max]
             
-            # 🆕 Include both crown elevation and auxiliary line in Y-axis scaling
-            if crown_elevation is not None:
-                relevant_elevations.append(crown_elevation)
-                relevant_elevations.append(crown_elevation - 1.0)  # Auxiliary line
+            # 🆕 Include reference elevations in Y-axis scaling based on mode
+            reference_elevation = None
+            if self.operation_mode == "ancho_proyectado":
+                # Get lama elevation for Ancho Proyectado
+                if current_pk in self.saved_measurements and 'lama_selected' in self.saved_measurements[current_pk]:
+                    reference_elevation = self.saved_measurements[current_pk]['lama_selected']['y']
+                elif self.current_crown_point:
+                    reference_elevation = self.current_crown_point[1]
+                    
+                if reference_elevation is not None:
+                    relevant_elevations.append(reference_elevation)  # Lama line
+                    relevant_elevations.append(reference_elevation + 2.0)  # +2m visual line
+                    relevant_elevations.append(reference_elevation + 3.0)  # +3m reference line
+            else:
+                # Get crown elevation for Revancha mode
+                if current_pk in self.saved_measurements and 'crown' in self.saved_measurements[current_pk]:
+                    reference_elevation = self.saved_measurements[current_pk]['crown']['y']
+                elif self.current_crown_point:
+                    reference_elevation = self.current_crown_point[1]
+                    
+                if reference_elevation is not None:
+                    relevant_elevations.append(reference_elevation)  # Crown line
+                    relevant_elevations.append(reference_elevation - 1.0)  # Auxiliary line
             
             if relevant_elevations:
                 margin = (max(relevant_elevations) - min(relevant_elevations)) * 0.08
@@ -1168,10 +1686,28 @@ class InteractiveProfileViewer(QDialog):
         
         visible_points = len([d for d, e in valid_data if -40 <= d <= 20])
         
-        # 🆕 Add reference lines info if exists
+        # 🆕 Add reference lines info based on operation mode
         ref_info = ""
-        if crown_elevation is not None:
-            ref_info = f" | Ref: {crown_elevation:.2f}m | Aux: {crown_elevation-1.0:.2f}m"
+        if self.operation_mode == "ancho_proyectado":
+            # Modo Ancho Proyectado: mostrar info de líneas Lama
+            lama_elevation = None
+            if current_pk in self.saved_measurements and 'lama_selected' in self.saved_measurements[current_pk]:
+                lama_elevation = self.saved_measurements[current_pk]['lama_selected']['y']
+            elif self.current_crown_point:
+                lama_elevation = self.current_crown_point[1]
+                
+            if lama_elevation is not None:
+                ref_info = f" | Lama: {lama_elevation:.2f}m | +2m: {lama_elevation+2.0:.2f}m | +3m: {lama_elevation+3.0:.2f}m"
+        else:
+            # Modo Revancha: mostrar info de líneas de coronamiento
+            crown_elevation = None
+            if current_pk in self.saved_measurements and 'crown' in self.saved_measurements[current_pk]:
+                crown_elevation = self.saved_measurements[current_pk]['crown']['y']
+            elif self.current_crown_point:
+                crown_elevation = self.current_crown_point[1]
+                
+            if crown_elevation is not None:
+                ref_info = f" | Ref: {crown_elevation:.2f}m | Aux: {crown_elevation-1.0:.2f}m"
         
         self.info_valid_points.setText(f"Puntos válidos: {len(valid_data)} | Visibles: {visible_points} | {lama_info}{ref_info}")
         
@@ -1184,11 +1720,14 @@ class InteractiveProfileViewer(QDialog):
         try:
             from qgis.PyQt.QtWidgets import QFileDialog, QMessageBox
             
-            # 🎯 DIÁLOGO SIMPLE - TÚ ELIGES EL NOMBRE COMPLETO
+            # 🎯 NOMBRE DINÁMICO SEGÚN MODO
+            mode_name = "ancho_proyectado" if self.operation_mode == "ancho_proyectado" else "revanchas"
+            default_filename = f"mediciones_{mode_name}.csv"
+            
             file_path, _ = QFileDialog.getSaveFileName(
                 self,
-                "Exportar Mediciones a CSV",
-                "mediciones_perfiles.csv",  # 🔧 NOMBRE SIMPLE POR DEFECTO
+                f"Exportar Mediciones {mode_name.replace('_', ' ').title()}",
+                default_filename,
                 "CSV files (*.csv);;All files (*.*)"
             )
             
@@ -1213,43 +1752,50 @@ class InteractiveProfileViewer(QDialog):
             for i, profile in enumerate(self.profiles_data):
                 pk = profile['pk']
                 
-                # Obtener datos automáticos (LAMA siempre disponible)
-                auto_lama_points = profile.get('lama_points', [])
-                auto_lama_elevation = auto_lama_points[0]['elevation'] if auto_lama_points else None
-                
-                # Obtener mediciones manuales guardadas
+                # Obtener mediciones guardadas
                 measurements = self.saved_measurements.get(pk, {})
                 
-                # COTA CORONAMIENTO
-                crown_elevation = None
-                if 'crown' in measurements:
-                    crown_elevation = measurements['crown']['y']
-                
-                # ANCHO
-                width_value = None
-                if 'width' in measurements:
-                    width_value = measurements['width']['distance']
-                
-                # LAMA (manual tiene prioridad)
-                lama_elevation = None
-                if 'lama' in measurements:
-                    lama_elevation = measurements['lama']['y']  # Manual
-                elif auto_lama_elevation is not None:
-                    lama_elevation = auto_lama_elevation  # Automática
-                
-                # REVANCHA (calcular si tenemos ambos valores)
-                revancha_value = None
-                if crown_elevation is not None and lama_elevation is not None:
-                    revancha_value = crown_elevation - lama_elevation
-                
-                # 🎯 CREAR FILA SOLO CON LAS COLUMNAS QUE QUIERES
-                row_data = {
-                    'PK': pk,
-                    'Cota_Coronamiento': crown_elevation,
-                    'Revancha': revancha_value,
-                    'Lama': lama_elevation,
-                    'Ancho': width_value
-                }
+                if self.operation_mode == "ancho_proyectado":
+                    # Modo Ancho Proyectado: Solo PK y Ancho
+                    row_data = {
+                        'PK': pk,
+                        'Ancho_Proyectado': measurements.get('width', {}).get('distance', None)
+                    }
+                else:
+                    # Modo Revancha: Formato original
+                    # Obtener datos automáticos (LAMA siempre disponible)
+                    auto_lama_points = profile.get('lama_points', [])
+                    auto_lama_elevation = auto_lama_points[0]['elevation'] if auto_lama_points else None
+                    
+                    # COTA CORONAMIENTO
+                    crown_elevation = None
+                    if 'crown' in measurements:
+                        crown_elevation = measurements['crown']['y']
+                    
+                    # ANCHO
+                    width_value = None
+                    if 'width' in measurements:
+                        width_value = measurements['width']['distance']
+                    
+                    # LAMA (manual tiene prioridad)
+                    lama_elevation = None
+                    if 'lama' in measurements:
+                        lama_elevation = measurements['lama']['y']  # Manual
+                    elif auto_lama_elevation is not None:
+                        lama_elevation = auto_lama_elevation  # Automática
+                    
+                    # REVANCHA (calcular si tenemos ambos valores)
+                    revancha_value = None
+                    if crown_elevation is not None and lama_elevation is not None:
+                        revancha_value = crown_elevation - lama_elevation
+                    
+                    row_data = {
+                        'PK': pk,
+                        'Cota_Coronamiento': crown_elevation,
+                        'Revancha': revancha_value,
+                        'Lama': lama_elevation,
+                        'Ancho': width_value
+                    }
                 
                 export_data.append(row_data)
                 
@@ -1273,23 +1819,35 @@ class InteractiveProfileViewer(QDialog):
             
             # Calcular estadísticas para mostrar al usuario
             total_rows = len(export_data)
-            rows_with_crown = sum(1 for row in export_data if row['Cota_Coronamiento'] is not None)
-            rows_with_width = sum(1 for row in export_data if row['Ancho'] is not None)
-            rows_with_lama = sum(1 for row in export_data if row['Lama'] is not None)
-            rows_with_revancha = sum(1 for row in export_data if row['Revancha'] is not None)
             
-            # Mensaje de éxito
-            QMessageBox.information(
-                self,
-                "✅ Exportación Exitosa",
-                f"Mediciones exportadas correctamente a:\n{file_path}\n\n"
-                f"📊 Resumen:\n"
-                f"• Total de perfiles: {total_rows}\n"
-                f"• Con Cota Coronamiento: {rows_with_crown}\n"
-                f"• Con Ancho: {rows_with_width}\n"
-                f"• Con LAMA: {rows_with_lama}\n"
-                f"• Con Revancha: {rows_with_revancha}"
-            )
+            if self.operation_mode == "ancho_proyectado":
+                rows_with_ancho = sum(1 for row in export_data if row['Ancho_Proyectado'] is not None)
+                
+                QMessageBox.information(
+                    self,
+                    "✅ Exportación Exitosa",
+                    f"Mediciones de Ancho Proyectado exportadas a:\n{file_path}\n\n"
+                    f"📊 Resumen:\n"
+                    f"• Total de perfiles: {total_rows}\n"
+                    f"• Con Ancho Proyectado: {rows_with_ancho}"
+                )
+            else:
+                rows_with_crown = sum(1 for row in export_data if row['Cota_Coronamiento'] is not None)
+                rows_with_width = sum(1 for row in export_data if row['Ancho'] is not None)
+                rows_with_lama = sum(1 for row in export_data if row['Lama'] is not None)
+                rows_with_revancha = sum(1 for row in export_data if row['Revancha'] is not None)
+                
+                QMessageBox.information(
+                    self,
+                    "✅ Exportación Exitosa",
+                    f"Mediciones exportadas correctamente a:\n{file_path}\n\n"
+                    f"📊 Resumen:\n"
+                    f"• Total de perfiles: {total_rows}\n"
+                    f"• Con Cota Coronamiento: {rows_with_crown}\n"
+                    f"• Con Ancho: {rows_with_width}\n"
+                    f"• Con LAMA: {rows_with_lama}\n"
+                    f"• Con Revancha: {rows_with_revancha}"
+                )
             
         except Exception as e:
             QMessageBox.critical(
@@ -1303,8 +1861,13 @@ class InteractiveProfileViewer(QDialog):
         import csv
         
         with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
-            # 🎯 SOLO LAS COLUMNAS QUE QUIERES (sin PK_Decimal)
-            fieldnames = ['PK', 'Cota_Coronamiento', 'Revancha', 'Lama', 'Ancho']
+            if self.operation_mode == "ancho_proyectado":
+                # Columnas para Ancho Proyectado
+                fieldnames = ['PK', 'Ancho_Proyectado']
+            else:
+                # Columnas para Revancha (original)
+                fieldnames = ['PK', 'Cota_Coronamiento', 'Revancha', 'Lama', 'Ancho']
+                
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             
             # Escribir cabecera
@@ -1314,7 +1877,7 @@ class InteractiveProfileViewer(QDialog):
             for row_data in export_data:
                 # Formatear valores nulos como cadenas vacías
                 formatted_row = {}
-                for key in fieldnames:  # Solo las columnas que queremos
+                for key in fieldnames:
                     value = row_data.get(key)
                     if value is None:
                         formatted_row[key] = ''
