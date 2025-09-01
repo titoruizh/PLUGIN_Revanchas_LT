@@ -24,7 +24,7 @@
       </font>
      </property>
      <property name="text">
-      <string>Análisis Topográfico - Las Tortolas</string>
+      <string>Revanchas - Las Tortolas</string>
      </property>
      <property name="alignment">
       <set>Qt::AlignCenter</set>
@@ -47,7 +47,7 @@
    <item>
     <widget class="QLabel" name="subtitle_label">
      <property name="text">
-      <string>Seleccione el muro para análisis:</string>
+      <string>Seleccione el muro para el análisis y reporte:</string>
      </property>
      <property name="alignment">
       <set>Qt::AlignCenter</set>
@@ -208,8 +208,10 @@
    <item>
     <widget class="QLabel" name="info_label">
      <property name="text">
-      <string>Muro 1: Análisis cada 20m desde PK 0+000 hasta 1+434
-Muros 2 y 3: Disponibles en versiones futuras</string>
+      <string>Todos los muros con un análisis cada 20m desde el PK Inicial hasta el PK Final
+Muro Principal:PK 0+000 hasta 1+434
+Muro Oeste: PK 0+000 hasta 0+689.88
+Muro Este:  PK 0+000 hasta 0+550.800</string>
      </property>
      <property name="alignment">
       <set>Qt::AlignCenter</set>
