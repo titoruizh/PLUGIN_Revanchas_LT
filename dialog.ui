@@ -105,6 +105,56 @@
     </widget>
    </item>
    <item>
+    <widget class="QGroupBox" name="ecw_group">
+     <property name="title">
+      <string>Archivo Ortomosaico (ECW)</string>
+     </property>
+     <layout class="QVBoxLayout" name="ecw_layout">
+      <item>
+       <layout class="QHBoxLayout" name="ecw_file_layout">
+        <item>
+         <widget class="QLabel" name="ecw_path_label">
+          <property name="text">
+           <string>ECW: [No seleccionado]</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="horizontalSpacer_2">
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>40</width>
+            <height>20</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+        <item>
+         <widget class="QPushButton" name="browse_ecw_button">
+          <property name="text">
+           <string>Examinar...</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <widget class="QLabel" name="ecw_info_label">
+        <property name="text">
+         <string>Seleccione un archivo ortomosaico (.ecw) para ver información</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
     <widget class="QGroupBox" name="profiles_group">
      <property name="title">
       <string>🎯 Análisis Interactivo de Perfiles</string>

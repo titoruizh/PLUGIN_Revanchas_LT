@@ -8,8 +8,10 @@ El plugin "Revanchas LT" automatiza el análisis topográfico de muros de conten
 - **Ancho de análisis de 80 metros en cada estación**
 - **Alineaciones integradas (actualmente Muro 1: PK 0+000 a 1+434)**
 - **Carga de archivos DEM en formato ASCII Grid (.asc)**
+- **Carga de ortomosaicos en formato ECW para visualización**
 - **Visualización de perfiles con matplotlib (opcional)**
 - **Análisis estadístico de elevaciones y pendientes**
+- **Visualización de ortomosaico en coordenadas exactas de cada perfil**
 
 ## Instalación
 
@@ -40,22 +42,27 @@ El plugin "Revanchas LT" automatiza el análisis topográfico de muros de conten
 - Muestra los datos de la alineación seleccionada
 - **Muro 1**: PK 0+000 a 1+434, estaciones cada 20m (72 estaciones total)
 
-#### Carga de DEM
+#### Carga de DEM y Ortomosaico
 - Haga clic en **"Examinar..."** para seleccionar un archivo DEM (.asc)
 - El plugin mostrará información básica del DEM (dimensiones, resolución, extensión)
+- Haga clic en **"Examinar..."** en la sección Ortomosaico para seleccionar un archivo ECW
+- El plugin validará que tanto el DEM como el ECW cubran la alineación seleccionada
 
 #### Generación de Perfiles
-- Una vez cargado el DEM, haga clic en **"Generar Perfiles Topográficos"**
+- Una vez cargados el DEM y el ECW, haga clic en **"Generar y Visualizar Perfiles"**
 - El plugin generará perfiles cada 20 metros con 80m de ancho de análisis
 - Se mostrará una barra de progreso durante la generación
 
-#### Análisis
-- Después de generar los perfiles, haga clic en **"Analizar Perfiles"**
-- El análisis incluye:
-  - Elevaciones mínima, máxima y promedio
-  - Pendiente longitudinal promedio
-  - Características del terreno
-  - Recomendaciones de diseño
+#### Visualizador Interactivo de Perfiles
+- Navegue entre perfiles usando botones o el deslizador
+- Use el botón **"🌎 Visualiza Ortomosaico"** para ver el ECW en la ubicación exacta del perfil actual
+- Herramientas de medición:
+  - Cota Coronamiento
+  - Ancho medido
+  - LAMA
+- Modos de operación:
+  - Revancha
+  - Ancho Proyectado
 
 ## Estructura de Datos
 
@@ -102,14 +109,17 @@ PLUGIN_Revanchas_LT/
 ├── dialog.ui                   # Interfaz principal
 ├── welcome_dialog.py           # Diálogo de bienvenida
 ├── welcome_dialog.ui           # Interfaz de bienvenida
+├── profile_viewer_dialog.py    # Visualizador interactivo de perfiles
 ├── core/                       # Módulos principales
 │   ├── dem_processor.py        # Procesamiento de DEM
+│   ├── dem_validator.py        # Validación de DEM y ECW
 │   ├── alignment_data.py       # Datos de alineación
 │   ├── profile_generator.py    # Generación de perfiles
 │   ├── wall_analyzer.py        # Análisis de muros
 │   └── visualization.py        # Visualización (matplotlib)
 ├── data/                       # Datos del proyecto
-│   └── alignments/            # Archivos de alineación
+│   ├── alignments/             # Archivos de alineación
+│   └── lama_points/            # Datos de puntos LAMA
 ├── metadata.txt               # Metadatos del plugin
 └── resources.qrc             # Recursos Qt
 ```
@@ -130,6 +140,11 @@ PLUGIN_Revanchas_LT/
 
 ## Desarrollo Futuro
 
+### Versión 1.2.0 (Planificada)
+- Mejoras en la visualización de ortomosaicos
+- Herramientas de anotación sobre ortomosaicos
+- Exportación de imágenes con perfiles superpuestos
+
 ### Versión 2.0 (Planificada)
 - Soporte para Muro 2 y Muro 3
 - Importación directa de datos de Civil3D XML
@@ -148,4 +163,4 @@ Para problemas o sugerencias:
 - Email: support@lastortolas.com
 
 ---
-*Plugin desarrollado para Las Tortolas Project - Versión 1.0.0*
+*Plugin desarrollado para Las Tortolas Project - Versión 1.1.0*

@@ -5,7 +5,7 @@ from qgis.PyQt.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
                                  QFileDialog, QProgressDialog, QApplication)
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QFont
-from qgis.core import QgsApplication
+from qgis.core import QgsApplication, QgsProject, QgsRasterLayer, QgsPointXY, QgsRectangle
 
 try:
     import matplotlib.pyplot as plt
@@ -121,11 +121,12 @@ class CustomNavigationToolbar(NavigationToolbar):
 class InteractiveProfileViewer(QDialog):
     """Interactive profile viewer with navigation and measurement tools"""
     
-    def __init__(self, profiles_data, parent=None):
+    def __init__(self, profiles_data, parent=None, ecw_file_path=None):
         super().__init__(parent)
         self.profiles_data = profiles_data
         self.current_profile_index = 0
         self.measurement_mode = None
+        self.ecw_file_path = ecw_file_path  # Store ECW file path
         
         # Separate measurements per PK
         self.saved_measurements = {}  # PK -> {crown: {x, y}, width: {p1, p2, distance}}
@@ -144,6 +145,9 @@ class InteractiveProfileViewer(QDialog):
         
         # 🆕 MODO DE OPERACIÓN: "revancha" o "ancho_proyectado"
         self.operation_mode = "revancha"  # Modo por defecto
+        
+        # 🆕 Referencia al visualizador de ortomosaico (si está abierto)
+        self.ortho_viewer = None
         
         self.setWindowTitle("Visualizador Interactivo de Perfiles")
         self.setModal(True)
@@ -277,22 +281,8 @@ class InteractiveProfileViewer(QDialog):
         if not profile:
             profile = self.profiles_data[self.current_profile_index]
         
-        # Usar alignment_type si está disponible (más confiable)
-        station = profile.get('station', {})
-        alignment_type = station.get('alignment_type', None)
-        
-        if alignment_type == 'curved':
-            return (-20, 40)  # Muro 2: rango especial
-        
-        # Si no, fallback a coordenadas (por compatibilidad)
-        if 'centerline_x' in profile and 'centerline_y' in profile:
-            x = profile['centerline_x']
-            y = profile['centerline_y']
-            if 336193 <= x <= 336328 and 6332549 <= y <= 6333195:
-                return (-20, 40)
-        
-        # Default para Muro 1 y 3
-        return (-40, 20)
+        # CAMBIO: Usar el mismo rango -40 a +40 para todos los muros
+        return (-40, 40)  # Nuevo rango universal para todos los muros
 
     def detect_wall_name(self, profile):
         """Detecta el nombre del muro para mostrar en el título"""
@@ -401,8 +391,34 @@ class InteractiveProfileViewer(QDialog):
         """)
         self.mode_toggle_btn.clicked.connect(self.toggle_operation_mode)
         
+        # Botón de Visualización de Ortomosaico
+        self.view_ortho_btn = QPushButton("🌎 Visualiza Ortomosaico")
+        self.view_ortho_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50; 
+                color: white; 
+                font-weight: bold; 
+                padding: 8px 16px; 
+                border-radius: 5px; 
+                border: 2px solid #388E3C;
+            }
+            QPushButton:hover {
+                background-color: #388E3C;
+            }
+        """)
+        self.view_ortho_btn.clicked.connect(self.show_orthomosaic)
+        
+        # Solo mostrar botón de ortomosaico si tenemos el archivo
+        if self.ecw_file_path:
+            self.view_ortho_btn.setEnabled(True)
+            self.view_ortho_btn.setToolTip("Ver ortomosaico en esta ubicación")
+        else:
+            self.view_ortho_btn.setEnabled(False)
+            self.view_ortho_btn.setToolTip("No hay ortomosaico disponible")
+        
         mode_layout.addWidget(mode_label)
         mode_layout.addWidget(self.mode_toggle_btn)
+        mode_layout.addWidget(self.view_ortho_btn)
         mode_layout.addStretch()
         
         # NAVEGACIÓN (SEGUNDA FILA)
@@ -1334,6 +1350,8 @@ class InteractiveProfileViewer(QDialog):
             self.pk_slider.setValue(self.current_profile_index)
             self.load_profile_measurements()  # Load measurements for new PK
             self.update_profile_display()
+            # 🆕 Actualizar visualizador de ortomosaico si está abierto
+            self.update_orthomosaic_view()
     
     def next_profile(self):
         """Navigate to next profile"""
@@ -1342,6 +1360,8 @@ class InteractiveProfileViewer(QDialog):
             self.pk_slider.setValue(self.current_profile_index)
             self.load_profile_measurements()  # Load measurements for new PK
             self.update_profile_display()
+            # 🆕 Actualizar visualizador de ortomosaico si está abierto
+            self.update_orthomosaic_view()
     
     def on_slider_changed(self, value):
         """Handle slider position change"""
@@ -1349,6 +1369,17 @@ class InteractiveProfileViewer(QDialog):
             self.current_profile_index = value
             self.load_profile_measurements()  # Load measurements for new PK
             self.update_profile_display()
+            # 🆕 Actualizar visualizador de ortomosaico si está abierto
+            self.update_orthomosaic_view()
+            
+    def update_orthomosaic_view(self):
+        """🆕 Actualiza la vista del ortomosaico si está abierto"""
+        if self.ortho_viewer and hasattr(self.ortho_viewer, 'update_to_profile'):
+            try:
+                profile = self.profiles_data[self.current_profile_index]
+                self.ortho_viewer.update_to_profile(profile)
+            except Exception as e:
+                print(f"Error al actualizar ortomosaico: {str(e)}")
     
     def load_profile_measurements(self):
         """🔧 Load measurements specific to current PK including different modes"""
@@ -1887,3 +1918,116 @@ class InteractiveProfileViewer(QDialog):
                         formatted_row[key] = value
                 
                 writer.writerow(formatted_row)
+                
+    def show_orthomosaic(self):
+        """Mostrar ortomosaico en una ventana separada en la ubicación exacta del perfil actual"""
+        # Si ya hay un visualizador abierto, mostrarle y traerle al frente
+        if self.ortho_viewer and hasattr(self.ortho_viewer, 'isVisible'):
+            if self.ortho_viewer.isVisible():
+                self.ortho_viewer.activateWindow()  # Trae la ventana al frente
+                self.ortho_viewer.raise_()  # Asegura que esté por encima
+                return
+        
+        if not self.ecw_file_path:
+            QMessageBox.warning(
+                self,
+                "Ortomosaico no disponible",
+                "No hay un archivo de ortomosaico cargado.\n\n" +
+                "Para usar esta función, vuelva a la ventana principal y seleccione un archivo ECW."
+            )
+            return
+            
+        try:
+            print(f"\n======= INICIANDO VISUALIZACIÓN DE ORTOMOSAICO =======")
+            # Obtener el perfil actual
+            profile = self.profiles_data[self.current_profile_index]
+            current_pk = profile['pk']
+            print(f"Perfil actual: PK {current_pk}")
+            
+            # Obtener coordenadas del centro del perfil
+            if 'centerline_x' not in profile or 'centerline_y' not in profile:
+                QMessageBox.warning(
+                    self,
+                    "Error de coordenadas",
+                    f"No se encontraron coordenadas para el perfil {current_pk}."
+                )
+                return
+                
+            x_coord = profile['centerline_x']
+            y_coord = profile['centerline_y']
+            print(f"Coordenadas del perfil: X={x_coord:.2f}, Y={y_coord:.2f}")
+            
+            # Obtener el ángulo de dirección (bearing) para el cálculo de la perpendicular
+            bearing = None
+            
+            # 🔧 MEJORADO: Obtener bearing_tangent para curvas si está disponible
+            if 'station' in profile:
+                station_data = profile['station']
+                
+                # Verificar si estamos en una curva y usar bearing_tangent si está disponible
+                if 'alignment_type' in station_data and station_data['alignment_type'] == 'curved':
+                    if 'bearing_tangent' in station_data:
+                        bearing = station_data['bearing_tangent']
+                        print(f"🔄 Usando bearing tangente para curva: {bearing:.2f}° [PK {current_pk}]")
+                    else:
+                        # Intentar calcular un bearing aproximado basado en puntos adyacentes
+                        print(f"⚠️ No se encontró bearing_tangent para curva en PK {current_pk}")
+                
+                # Si no encontramos un bearing específico para curva, usar el bearing normal
+                if bearing is None and 'bearing' in station_data:
+                    bearing = station_data['bearing']
+                    print(f"📏 Usando bearing normal del station: {bearing:.2f}°")
+            
+            # Si aún no tenemos bearing, intentar obtenerlo directamente del profile
+            if bearing is None and 'bearing' in profile:
+                bearing = profile['bearing']
+                print(f"📏 Usando bearing del perfil: {bearing:.2f}°")
+                
+            # Log si no encontramos bearing
+            if bearing is None:
+                print("⚠️ ADVERTENCIA: No se encontró bearing en el perfil, se usará valor por defecto")
+                    
+            # Usar nuestra nueva clase de visualizador de ortomosaico
+            from .orthomosaic_viewer import OrthomosaicViewer
+            
+            print(f"Creando visualizador con ECW: {self.ecw_file_path}")
+            print(f"Parámetros: X={x_coord:.2f}, Y={y_coord:.2f}, PK={current_pk}, Bearing={bearing}")
+            
+            # 🆕 Crear la ventana del visualizador de forma NO MODAL
+            self.ortho_viewer = OrthomosaicViewer(
+                self.ecw_file_path, 
+                x_coord, 
+                y_coord, 
+                current_pk,
+                self,  # Parent es este visualizador de perfiles
+                bearing
+            )
+            
+            # Actualizar título para mostrar que es una ventana sincronizada
+            self.ortho_viewer.setWindowTitle(f"Visualizador de Ortomosaico - Perfil {current_pk} [Sincronizado]")
+            
+            # 🆕 Conectar señal de cierre para limpiar referencia
+            self.ortho_viewer.destroyed.connect(self.on_ortho_viewer_closed)
+            
+            # 🆕 Mostrar de forma no modal para permitir interacción con ambas ventanas
+            self.ortho_viewer.show()
+                
+        except ImportError as ie:
+            QMessageBox.critical(
+                self,
+                "Error - Módulo no encontrado",
+                f"No se pudo cargar el visualizador de ortomosaico.\n\n"
+                f"Asegúrese de que el archivo 'orthomosaic_viewer.py' esté en la carpeta del plugin.\n\n"
+                f"Error técnico: {str(ie)}"
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Error al mostrar el ortomosaico: {str(e)}"
+            )
+            
+    def on_ortho_viewer_closed(self):
+        """🆕 Limpia la referencia al visualizador cuando se cierra"""
+        print("Visualizador de ortomosaico cerrado")
+        self.ortho_viewer = None

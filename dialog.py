@@ -26,7 +26,7 @@ from qgis.PyQt import uic
 from qgis.PyQt import QtWidgets
 from qgis.PyQt.QtWidgets import QFileDialog, QMessageBox, QProgressDialog
 from qgis.PyQt.QtCore import Qt, QTimer
-from qgis.core import QgsApplication
+from qgis.core import QgsApplication, QgsRasterLayer
 
 from .core.dem_processor import DEMProcessor
 from .core.alignment_data import AlignmentData
@@ -55,12 +55,13 @@ class RevanchasLTDialog(QtWidgets.QDialog, FORM_CLASS):
         self.profile_generator = ProfileGenerator()
         self.wall_analyzer = WallAnalyzer()
         self.dem_file_path = None
+        self.ecw_file_path = None  # New: Store ECW file path
         self.profiles_data = None  # Store generated profiles
         
         # Connect signals - UNIFIED: only one button now
         self.browse_dem_button.clicked.connect(self.browse_dem_file)
+        self.browse_ecw_button.clicked.connect(self.browse_ecw_file)  # New: ECW browse button
         self.generate_profiles_button.clicked.connect(self.generate_and_visualize_profiles)
-        # Remove the analyze_button connection - we'll hide it or change its function
         
         # Initially disable button that requires DEM
         self.generate_profiles_button.setEnabled(False)
@@ -125,7 +126,9 @@ class RevanchasLTDialog(QtWidgets.QDialog, FORM_CLASS):
                 # ✅ Continuar con carga normal
                 self.dem_file_path = file_path
                 self.dem_path_label.setText(f"DEM: {os.path.basename(file_path)}")
-                self.generate_profiles_button.setEnabled(True)
+                
+                # Habilitar botón de generar perfiles solo cuando tenemos todos los archivos necesarios
+                self.check_required_files()
                 
                 # Show DEM info
                 info_text = f"Dimensiones: {dem_info['cols']} x {dem_info['rows']}\n"
@@ -139,6 +142,104 @@ class RevanchasLTDialog(QtWidgets.QDialog, FORM_CLASS):
                     "Error",
                     f"No se pudo validar el DEM: {str(e)}"
                 )
+                
+    def browse_ecw_file(self):
+        """Browse for ECW file with alignment coverage validation"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Seleccionar archivo Ortomosaico",
+            "",
+            "ECW files (*.ecw);;Todos los formatos de imagen (*.ecw *.tif *.jpg *.png);;All files (*)"
+        )
+        
+        if file_path:
+            try:
+                # Create a temporary QgsRasterLayer to validate the ECW file
+                ecw_layer = QgsRasterLayer(file_path, "temp_ecw_validator")
+                
+                if not ecw_layer.isValid():
+                    QMessageBox.critical(
+                        self,
+                        "Error - Ortomosaico Inválido",
+                        f"El archivo seleccionado no es un ortomosaico válido o no está georreferenciado.\n\n"
+                        f"Por favor seleccione un archivo ECW válido con georreferencia."
+                    )
+                    return
+                
+                # ✅ VALIDAR COBERTURA DE LA ALINEACIÓN
+                if self.selected_wall:
+                    from .core.dem_validator import DEMValidator
+                    
+                    alignment = self.alignment_data.get_alignment(self.selected_wall)
+                    
+                    # Obtener extensión del ECW
+                    ecw_extent = ecw_layer.extent()
+                    ecw_info = {
+                        'xmin': ecw_extent.xMinimum(),
+                        'xmax': ecw_extent.xMaximum(),
+                        'ymin': ecw_extent.yMinimum(),
+                        'ymax': ecw_extent.yMaximum()
+                    }
+                    
+                    validation = DEMValidator.validate_dem_coverage(ecw_info, alignment)
+                    
+                    if not validation['coverage_ok']:
+                        # ❌ ECW NO CUBRE LA ALINEACIÓN
+                        QMessageBox.critical(
+                            self,
+                            "Error - Ortomosaico Insuficiente",
+                            f"El ortomosaico seleccionado NO cubre la alineación del {self.selected_wall}.\n\n"
+                            f"🎯 Área requerida (con buffer 50m):\n"
+                            f"X: {validation['alignment_bounds']['xmin']:.1f} - {validation['alignment_bounds']['xmax']:.1f}\n"
+                            f"Y: {validation['alignment_bounds']['ymin']:.1f} - {validation['alignment_bounds']['ymax']:.1f}\n\n"
+                            f"📍 Ortomosaico disponible:\n"
+                            f"X: {validation['dem_bounds']['xmin']:.1f} - {validation['dem_bounds']['xmax']:.1f}\n"
+                            f"Y: {validation['dem_bounds']['ymin']:.1f} - {validation['dem_bounds']['ymax']:.1f}\n\n"
+                            f"❌ Seleccione un ortomosaico que cubra completamente la zona del muro."
+                        )
+                        return  # ❌ NO continuar si ECW no es válido
+                    
+                    # ✅ ECW válido - mostrar confirmación
+                    QMessageBox.information(
+                        self,
+                        "✅ Ortomosaico Validado",
+                        f"El ortomosaico cubre correctamente la alineación del {self.selected_wall}."
+                    )
+                
+                # ✅ Continuar con carga normal
+                self.ecw_file_path = file_path
+                self.ecw_path_label.setText(f"ECW: {os.path.basename(file_path)}")
+                
+                # Habilitar botón de generar perfiles solo cuando tenemos todos los archivos necesarios
+                self.check_required_files()
+                
+                # Show ECW info
+                extent = ecw_layer.extent()
+                width = ecw_layer.width()
+                height = ecw_layer.height()
+                
+                pixel_size_x = (extent.xMaximum() - extent.xMinimum()) / width
+                pixel_size_y = (extent.yMaximum() - extent.yMinimum()) / height
+                
+                info_text = f"Dimensiones: {width} x {height} píxeles\n"
+                info_text += f"Resolución: {pixel_size_x:.2f}m/px\n"
+                info_text += f"Extensión: X({extent.xMinimum():.2f}, {extent.xMaximum():.2f}) Y({extent.yMinimum():.2f}, {extent.yMaximum():.2f})"
+                self.ecw_info_label.setText(info_text)
+                
+            except Exception as e:
+                QMessageBox.warning(
+                    self,
+                    "Error",
+                    f"No se pudo validar el ortomosaico: {str(e)}"
+                )
+                
+    def check_required_files(self):
+        """Check if all required files are selected and enable/disable buttons accordingly"""
+        # Solo necesitamos el DEM para generar perfiles (ECW es opcional)
+        if self.dem_file_path:
+            self.generate_profiles_button.setEnabled(True)
+        else:
+            self.generate_profiles_button.setEnabled(False)
     
     def generate_and_visualize_profiles(self):
         """🚀 UNIFIED METHOD: Generate profiles and launch interactive viewer"""
@@ -149,6 +250,16 @@ class RevanchasLTDialog(QtWidgets.QDialog, FORM_CLASS):
                 "Seleccione un archivo DEM y un muro antes de continuar."
             )
             return
+            
+        # ECW es opcional - mostrar advertencia pero continuar
+        if not self.ecw_file_path:
+            QMessageBox.information(
+                self,
+                "Ortomosaico no disponible",
+                "No se ha seleccionado un archivo ortomosaico (.ECW).\n\n" +
+                "El visualizador de perfiles funcionará normalmente, pero no podrá ver\n" +
+                "los perfiles sobre el ortomosaico."
+            )
             
         try:
             # Create progress dialog
@@ -207,7 +318,7 @@ class RevanchasLTDialog(QtWidgets.QDialog, FORM_CLASS):
             # 🚀 Launch interactive viewer directly
             try:
                 from .profile_viewer_dialog import InteractiveProfileViewer
-                viewer = InteractiveProfileViewer(self.profiles_data, self)
+                viewer = InteractiveProfileViewer(self.profiles_data, self, self.ecw_file_path)
                 viewer.exec_()
                 
             except ImportError as ie:
