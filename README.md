@@ -1,210 +1,137 @@
-# PLUGIN_Revanchas_LT
-Mejora procesos y automatización Revanchas Las Tortolas
+# Revanchas LT - QGIS Plugin
 
-## 🎯 Descripción General
+**Análisis topográfico automatizado para muros de contención**
 
-Plugin para QGIS especializado en análisis topográfico de muros de contención, con dos modos de operación:
-
-- **🔧 MODO REVANCHA**: Análisis tradicional completo (Coronamiento, LAMA, Revancha, Ancho)
-- **📐 MODO ANCHO PROYECTADO**: Análisis simplificado para cálculo de anchos proyectados
-
-## 🚀 Nuevas Funcionalidades (2025)
-
-### 📐 **MODO ANCHO PROYECTADO**
-- **Toggle visual** para alternar entre modos de operación
-- **Selección de punto Lama** en terreno natural
-- **Auto-generación** de línea de referencia 3 metros arriba
-- **Auto-detección** de ancho proyectado en línea +3m
-- **Exportación simplificada** (solo PK + Ancho)
-- **Interfaz adaptativa** que oculta elementos no necesarios
-
-### 🔧 **MODO REVANCHA** (Funcionalidad Original)
-- Análisis completo de perfiles topográficos
-- Cálculo automático de Revanchas
-- Puntos LAMA automáticos + override manual
-- Exportación completa con todas las métricas
-
-## 🎛️ Características Principales
-
-### 📊 **Visualizador Interactivo de Perfiles**
-- Navegación fluida entre perfiles (PK)
-- Herramientas de zoom y pan optimizadas
-- Auto-detección inteligente de anchos
-- Medición manual con snap automático (tecla 'A')
-
-### 📏 **Herramientas de Medición**
-- **Cota Coronamiento/Lama**: Snap al terreno natural
-- **Medición de Ancho**: Con líneas de referencia dinámicas
-- **Auto-detección**: Algoritmos avanzados de intersección
-- **Override manual**: Control total del usuario cuando necesario
-
-### 📈 **Líneas de Referencia Inteligentes**
-#### Modo Revancha:
-- Línea de coronamiento horizontal
-- Línea auxiliar (-1m) para referencia
-
-#### Modo Ancho Proyectado:
-- Línea visual en punto Lama
-- Línea de medición (+3m) para cálculos
-
-### 📋 **Exportación de Datos**
-#### CSV Ancho Proyectado:
-```csv
-PK,Ancho_Proyectado
-0+000,12.450
-0+020,11.200
-```
-
-#### CSV Revancha Completa:
-```csv
-PK,Cota_Coronamiento,Revancha,Lama,Ancho
-0+000,105.230,2.150,103.080,12.450
-0+020,104.890,1.980,102.910,11.200
-```
-
-## 🖥️ Interfaz de Usuario
-
-### 🧭 **Panel de Navegación**
-- **Toggle de Modo**: Alternar entre Revancha/Ancho Proyectado
-- **Controles de PK**: Botones anterior/siguiente + slider
-- **Contador de perfiles**: Posición actual / total
-
-### 🔧 **Panel de Herramientas**
-#### Modo Revancha:
-- 📍 Cota Coronamiento
-- 📏 Medir Ancho  
-- 🟡 Modificar LAMA
-- 🗑️ Limpiar
-
-#### Modo Ancho Proyectado:
-- 📍 Seleccionar Lama
-- 📏 Medir Ancho Proyectado
-- 🗑️ Limpiar
-
-### ℹ️ **Panel de Información**
-- Información del perfil actual
-- Coordenadas y elevaciones
-- Puntos válidos y rangos de datos
-- Estado de líneas de referencia
-
-## 🎨 **Visualización Avanzada**
-
-### 🌍 **Elementos Gráficos**
-- **Terreno Natural**: Línea azul con relleno marrón
-- **Eje de Alineación**: Línea roja discontinua (centerline)
-- **Puntos de Medición**: Códigos de color por tipo y método
-- **Líneas de Referencia**: Diferentes estilos según función
-
-### 🎯 **Código de Colores**
-- **Verde Lima**: Mediciones auto-detectadas
-- **Magenta**: Mediciones manuales
-- **Amarillo**: Puntos LAMA (auto/manual)
-- **Naranja**: Líneas de referencia principales
-- **Gris**: Líneas auxiliares
-
-## ⚙️ **Algoritmos Avanzados**
-
-### 🤖 **Auto-detección de Anchos**
-- Intersección exacta con terreno natural
-- Interpolación lineal entre puntos
-- Búsqueda direccional optimizada
-- Manejo robusto de casos límite
-
-### 📐 **Cálculo de Ancho Proyectado**
-- Generación automática de línea +3m
-- Intersección con perfil topográfico
-- Validación de resultados
-- Fallback a medición manual
-
-## 🗂️ **Estructura de Archivos**
-
-```
-PLUGIN_Revanchas_LT/
-├── profile_viewer_dialog.py     # Visualizador principal ⭐ MODIFICADO
-├── revanchas_lt_plugin.py       # Plugin principal
-├── dialog.py                    # Dialog principal
-├── welcome_dialog.py            # Dialog de bienvenida
-├── core/
-│   ├── alignment_data.py        # Datos de alineación
-│   ├── dem_processor.py         # Procesamiento DEM
-│   ├── profile_generator.py     # Generación de perfiles
-│   ├── wall_analyzer.py         # Análisis de muros
-│   └── visualization.py         # Herramientas de visualización
-├── data/
-│   ├── alignments/             # Datos de alineaciones
-│   └── lama_points/           # Puntos LAMA por muro
-├── NUEVAS_FUNCIONALIDADES.md   # 📄 Documentación detallada ⭐ NUEVO
-└── README.md                   # Este archivo
-```
-
-## 🚀 **Instalación y Uso**
-
-### 📥 Instalación
-1. Copiar plugin a directorio QGIS plugins
-2. Activar en "Administrador de Complementos"
-3. Aparecerá ícono en barra de herramientas
-
-### 🎮 Uso Básico
-1. **Ejecutar plugin** → Dialog de bienvenida
-2. **Seleccionar muro** → Carga automática de perfiles
-3. **Elegir modo** → Toggle Revancha/Ancho Proyectado
-4. **Navegar perfiles** → Usar controles de navegación
-5. **Realizar mediciones** → Herramientas interactivas
-6. **Exportar resultados** → CSV según modo seleccionado
-
-### ⌨️ **Atajos de Teclado**
-- **'A'**: Snap automático durante medición de ancho
-- **Mouse wheel**: Zoom in/out en perfil
-- **Click + Drag**: Pan en el perfil
-
-## 🔄 **Flujos de Trabajo Recomendados**
-
-### 🔧 **Para Análisis de Revanchas**
-1. Modo **REVANCHA** activado
-2. Definir Cota Coronamiento → Auto-detección ancho
-3. Verificar/ajustar LAMA si necesario
-4. Exportar datos completos
-5. Analizar Revancha = Coronamiento - LAMA
-
-### 📐 **Para Ancho Proyectado**
-1. Modo **ANCHO PROYECTADO** activado  
-2. Seleccionar punto Lama → Auto-generación línea +3m
-3. Verificar ancho auto-detectado
-4. Ajustar manualmente si necesario
-5. Exportar solo PK + Ancho
-
-## 📊 **Beneficios de la Actualización**
-
-### ✅ **Versatilidad**
-- Dos modos especializados en un solo plugin
-- Interfaz adaptativa según necesidades
-- Workflows optimizados por tipo de análisis
-
-### ✅ **Eficiencia**  
-- Auto-detección inteligente
-- Exportación específica por modo
-- Reducción significativa de tiempo de análisis
-
-### ✅ **Robustez**
-- Funcionalidad original preservada
-- Código mantenible y extensible
-- Manejo de casos límite mejorado
-
-## 🛠️ **Requisitos Técnicos**
-
-- **QGIS**: 3.x o superior
-- **Python**: 3.7+
-- **Dependencias**: matplotlib, PyQt5
-- **Datos**: DEM, alineaciones, puntos LAMA
-
-## 📞 **Soporte y Contacto**
-
-- **Proyecto**: Las Tortolas
-- **Email**: support@lastortolas.com
-- **Documentación**: Ver `NUEVAS_FUNCIONALIDADES.md` para detalles técnicos
+[![QGIS](https://img.shields.io/badge/QGIS-3.x%2B-green)](https://qgis.org)
+[![Python](https://img.shields.io/badge/Python-3.7%2B-blue)](https://python.org)
+[![License](https://img.shields.io/badge/License-GPL%202.0-orange)](LICENSE)
 
 ---
 
-## 🎉 **¡Actualización 2025 Completa!**
+## 📖 Descripción
 
-Plugin completamente renovado con modo **Ancho Proyectado** funcionando en paralelo con **Revanchas** tradicionales. ¡Listo para análisis topográficos avanzados!
+Plugin profesional para QGIS que automatiza el análisis topográfico de muros de contención en el proyecto Las Tortolas. Migra flujos de trabajo desde Civil3D a QGIS, proporcionando análisis automático de perfiles topográficos con soporte para ortomosaicos ECW.
+
+## ✨ Características Principales
+
+### 🔧 Modo Revancha (Análisis Completo)
+- Análisis automático de perfiles topográficos cada 20m
+- Cálculo de coronamiento, LAMA, revancha y ancho
+- Exportación completa de todas las métricas
+
+### 📐 Modo Ancho Proyectado (Análisis Simplificado)
+- Selección de punto LAMA en terreno natural
+- Auto-generación de línea de referencia +3m
+- Exportación simplificada (PK + Ancho)
+
+### 🌍 Visualización Avanzada
+- Visualizador interactivo de perfiles con matplotlib
+- Soporte para ortomosaicos ECW con visualización sincronizada
+- Navegación fluida entre perfiles con herramientas de zoom/pan
+- Auto-detección inteligente de anchos con snap automático
+
+## � Instalación
+
+### Requisitos del Sistema
+- QGIS 3.0 o superior
+- Python 3.7+
+- PyQt5
+- matplotlib (opcional, para visualización avanzada)
+
+### Instalación del Plugin
+1. Clone este repositorio en su directorio de plugins de QGIS:
+   ```bash
+   git clone https://github.com/titoruizh/PLUGIN_Revanchas_LT.git
+   ```
+2. Active el plugin desde el Administrador de Complementos de QGIS
+3. El plugin aparecerá en la barra de herramientas
+
+## 🎮 Uso Rápido
+
+1. **Ejecutar el plugin** → Se abre el diálogo de bienvenida
+2. **Seleccionar muro** → Carga automática de alineaciones
+3. **Cargar DEM** → Archivo ASCII Grid (.asc)
+4. **Cargar ECW** → Ortomosaico (opcional)
+5. **Generar perfiles** → Análisis automático cada 20m
+6. **Elegir modo** → Revancha o Ancho Proyectado
+7. **Realizar análisis** → Herramientas interactivas
+8. **Exportar resultados** → CSV según modo seleccionado
+
+## � Estructura del Proyecto
+
+```
+PLUGIN_Revanchas_LT/
+├── __init__.py                 # Punto de entrada del plugin
+├── revanchas_lt_plugin.py      # Clase principal del plugin
+├── dialog.py                   # Diálogo principal
+├── profile_viewer_dialog.py    # Visualizador interactivo
+├── orthomosaic_viewer.py       # Visualizador de ortomosaico
+├── welcome_dialog.py           # Diálogo de bienvenida
+├── core/                       # Módulos principales
+│   ├── alignment_data.py       # Gestión de alineaciones
+│   ├── dem_processor.py        # Procesamiento de DEM
+│   ├── profile_generator.py    # Generación de perfiles
+│   └── wall_analyzer.py        # Análisis de muros
+├── data/                       # Datos del proyecto
+│   ├── alignments/             # Alineaciones por muro
+│   └── lama_points/           # Puntos LAMA
+├── docs/                       # Documentación
+│   ├── user-manual.md          # Manual de usuario
+│   ├── NUEVAS_FUNCIONALIDADES.md
+│   └── development/            # Documentación técnica
+├── metadata.txt               # Metadatos del plugin
+└── resources.qrc             # Recursos Qt
+```
+
+## 📊 Datos Soportados
+
+### Formatos de Entrada
+- **DEM**: ASCII Grid (.asc)
+- **Ortomosaico**: ECW (.ecw)
+- **Alineaciones**: CSV integrado
+
+### Formatos de Salida
+- **CSV Modo Revancha**: PK, Cota_Coronamiento, Revancha, LAMA, Ancho
+- **CSV Modo Ancho Proyectado**: PK, Ancho_Proyectado
+
+## 🛠️ Desarrollo
+
+### Requisitos de Desarrollo
+```bash
+pip install matplotlib PyQt5
+```
+
+### Estructura de Alineaciones
+- **Muro 1**: PK 0+000 a 1+434 (72 estaciones)
+- **Futuros**: Muro 2 y Muro 3 (planificados)
+
+## 📚 Documentación
+
+- [Manual de Usuario](docs/user-manual.md) - Guía completa de uso
+- [Nuevas Funcionalidades](docs/NUEVAS_FUNCIONALIDADES.md) - Detalles técnicos
+- [Documentación de Desarrollo](docs/development/) - Historial técnico
+
+## 🤝 Contribución
+
+Las contribuciones son bienvenidas. Por favor:
+
+1. Fork el proyecto
+2. Cree una rama para su función (`git checkout -b feature/AmazingFeature`)
+3. Commit sus cambios (`git commit -m 'Add some AmazingFeature'`)
+4. Push a la rama (`git push origin feature/AmazingFeature`)
+5. Abra un Pull Request
+
+## 📧 Soporte
+
+- **Proyecto**: Las Tortolas
+- **Repository**: [GitHub](https://github.com/titoruizh/PLUGIN_Revanchas_LT)
+- **Issues**: Use GitHub Issues para reportar bugs o solicitar funcionalidades
+- **Email**: support@lastortolas.com
+
+## 📄 Licencia
+
+Este proyecto está licenciado bajo la Licencia GPL 2.0 - vea el archivo [LICENSE](LICENSE) para detalles.
+
+---
+
+**Desarrollado para Las Tortolas Project** | **Versión 1.2.0** | **2025**

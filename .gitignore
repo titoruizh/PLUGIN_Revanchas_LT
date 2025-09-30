@@ -109,3 +109,26 @@ tmp/
 # Plugin specific
 *.zip
 *.tar.gz
+
+# Large data files (exclude from repository)
+*.ecw
+*.asc
+*.tif
+*.tiff
+*.las
+*.laz
+
+# User data and test files
+test_data/
+sample_data/
+user_exports/
+exports/
+
+# Log files
+*.log
+debug.txt
+
+# Backup files
+*.bak
+*.backup
+*~
