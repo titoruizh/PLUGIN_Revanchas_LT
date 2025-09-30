@@ -51,6 +51,10 @@ Plugin  para QGIS que simplifica y automatiza el análisis topográfico de muros
 7. **Realizar análisis** → Herramientas interactivas: Anchos, Lama, Coronamiento, Etc.
 8. **Exportar resultados** → CSV según modo seleccionado
 
+
+https://github.com/user-attachments/assets/84ab2f72-0609-4eab-98ec-657fe8595429
+
+
 ## � Estructura del Proyecto
 
 ```
