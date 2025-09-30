@@ -52,7 +52,7 @@ Plugin  para QGIS que simplifica y automatiza el análisis topográfico de muros
 8. **Exportar resultados** → CSV según modo seleccionado
 
 
-https://github.com/user-attachments/assets/84ab2f72-0609-4eab-98ec-657fe8595429
+https://github.com/user-attachments/assets/bd433363-5de0-4f1a-9ba3-6098bb51cc6d
 
 
 ## � Estructura del Proyecto
