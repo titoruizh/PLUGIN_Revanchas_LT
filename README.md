@@ -12,6 +12,10 @@
 
 Plugin  para QGIS que simplifica y automatiza el análisis topográfico de muros de contención de Las Tortolas - Anglo American. Migra flujos de trabajo desde Civil3D a QGIS, proporcionando facilidad en el analisis de perfiles topográficos con soporte para ortomosaicos ECW.
 
+
+<img width="510" height="321" alt="Menu_1" src="https://github.com/user-attachments/assets/314da80c-8f10-4a61-b8b5-e229baee8ce5" />
+
+
 ## ✨ Características Principales
 
 ### 🔧 Modo Revancha 
