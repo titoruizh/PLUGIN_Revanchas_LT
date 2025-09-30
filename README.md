@@ -71,8 +71,6 @@ PLUGIN_Revanchas_LT/
 │   └── lama_points/           # Puntos LAMA
 ├── docs/                       # Documentación
 │   ├── user-manual.md          # Manual de usuario
-│   ├── NUEVAS_FUNCIONALIDADES.md
-│   └── development/            # Documentación técnica
 ├── metadata.txt               # Metadatos del plugin
 └── resources.qrc             # Recursos Qt
 ```
