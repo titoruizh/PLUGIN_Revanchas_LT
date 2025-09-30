@@ -95,9 +95,6 @@ PLUGIN_Revanchas_LT/
 - **Repository**: [GitHub](https://github.com/titoruizh/PLUGIN_Revanchas_LT)
 - **Email**: truizh@linkapsis.com   |    tito.ruiz@usach.cl
 
-## 📄 Licencia
-
-Este proyecto está licenciado bajo la Licencia GPL 2.0 - vea el archivo [LICENSE](LICENSE) para detalles.
 
 ---
 
