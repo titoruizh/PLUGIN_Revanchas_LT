@@ -6,7 +6,7 @@ El plugin "Revanchas LT" automatiza el análisis topográfico de muros de conten
 ## Características Principales
 - **Análisis automático de perfiles topográficos cada 20 metros**
 - **Ancho de análisis de 80 metros en cada estación**
-- **Alineaciones integradas (actualmente Muro 1: PK 0+000 a 1+434)**
+- **Alineaciones integradas para Muro Principal, Este y Oeste**
 - **Carga de archivos DEM en formato ASCII Grid (.asc)**
 - **Carga de ortomosaicos en formato ECW para visualización**
 - **Visualización de perfiles con matplotlib (opcional)**
@@ -31,16 +31,21 @@ El plugin "Revanchas LT" automatiza el análisis topográfico de muros de conten
 - Abra QGIS y vaya al menú **Complementos**
 - Busque **"Revanchas LT - Análisis Topográfico"**
 - Haga clic para ejecutar el plugin
+  
+<img width="1298" height="766" alt="complemento" src="https://github.com/user-attachments/assets/4ad4b287-8325-4e2e-b535-535bdf5b70f7" />
 
 ### 2. Pantalla de Bienvenida
-- Seleccione el muro a analizar (actualmente solo "Muro 1" disponible)
-- Los Muros 2 y 3 estarán disponibles en versiones futuras
+- Seleccione el muro a analizar
+  
+<img width="510" height="321" alt="Menu_1" src="https://github.com/user-attachments/assets/c91faa4e-9e84-4802-b994-d2695fe2f520" />
 
 ### 3. Pantalla Principal
 
 #### Información de Alineación
 - Muestra los datos de la alineación seleccionada
 - **Muro 1**: PK 0+000 a 1+434, estaciones cada 20m (72 estaciones total)
+
+<img width="587" height="569" alt="info_alineacion" src="https://github.com/user-attachments/assets/faad7084-dacb-4504-bb37-bf8bb65d070d" />
 
 #### Carga de DEM y Ortomosaico
 - Haga clic en **"Examinar..."** para seleccionar un archivo DEM (.asc)
@@ -64,16 +69,21 @@ El plugin "Revanchas LT" automatiza el análisis topográfico de muros de conten
   - Revancha
   - Ancho Proyectado
 
+<img width="1843" height="921" alt="principal" src="https://github.com/user-attachments/assets/718ba640-a68f-4cfa-8f64-adfa01b0be01" />
+
+
 ## Estructura de Datos
 
 ### Alineaciones
 Las alineaciones están integradas en el código del plugin:
-- **Muro 1**: 72 estaciones desde PK 0+000 hasta 1+434
+- **Muro Principal**: 72 estaciones desde PK 0+000 hasta 1+434
+- **Muro Oeste**: 36 estaciones desde PK 0+000 hasta 0+690
+- **Muro Este**: 26 estaciones desde PK 0+000 hasta 0+551
 - Cada estación incluye coordenadas X,Y, rumbo y elevación de referencia
 
 ### Perfiles Topográficos
 Cada perfil incluye:
-- 81 puntos espaciados cada metro (80m de ancho total)
+- Puntos espaciados cada metro (80m de ancho total)
 - Distancias desde el eje de alineación (-40m a +40m)
 - Elevaciones del terreno extraídas del DEM
 - Coordenadas mundiales de cada punto
@@ -85,82 +95,11 @@ El análisis proporciona:
 - Clasificación de variabilidad del terreno
 - Recomendaciones técnicas
 
-## Archivos de Ejemplo
-
-### Formato DEM (ASCII Grid)
-```
-ncols         1000
-nrows         1000
-xllcorner     400000.0
-yllcorner     6000000.0
-cellsize      1.0
-NODATA_value  -9999
-100.1 100.2 100.3 ...
-100.2 100.3 100.4 ...
-...
-```
-
-### Estructura de Archivos del Plugin
-```
-PLUGIN_Revanchas_LT/
-├── __init__.py                 # Punto de entrada
-├── revanchas_lt_plugin.py      # Clase principal
-├── dialog.py                   # Diálogo principal
-├── dialog.ui                   # Interfaz principal
-├── welcome_dialog.py           # Diálogo de bienvenida
-├── welcome_dialog.ui           # Interfaz de bienvenida
-├── profile_viewer_dialog.py    # Visualizador interactivo de perfiles
-├── core/                       # Módulos principales
-│   ├── dem_processor.py        # Procesamiento de DEM
-│   ├── dem_validator.py        # Validación de DEM y ECW
-│   ├── alignment_data.py       # Datos de alineación
-│   ├── profile_generator.py    # Generación de perfiles
-│   ├── wall_analyzer.py        # Análisis de muros
-│   └── visualization.py        # Visualización (matplotlib)
-├── data/                       # Datos del proyecto
-│   ├── alignments/             # Archivos de alineación
-│   └── lama_points/            # Datos de puntos LAMA
-├── metadata.txt               # Metadatos del plugin
-└── resources.qrc             # Recursos Qt
-```
-
-## Solución de Problemas
-
-### Error: "No se pudo leer información del DEM"
-- Verifique que el archivo .asc tenga el formato correcto
-- Asegúrese de que el archivo no esté corrupto
-
-### Error: "Matplotlib no disponible"
-- La visualización de perfiles requiere matplotlib
-- Instale matplotlib: `pip install matplotlib`
-
-### Plugin no aparece en QGIS
-- Verifique que todos los archivos estén en la carpeta correcta
-- Reinicie QGIS después de instalar el plugin
-
-## Desarrollo Futuro
-
-### Versión 1.2.0 (Planificada)
-- Mejoras en la visualización de ortomosaicos
-- Herramientas de anotación sobre ortomosaicos
-- Exportación de imágenes con perfiles superpuestos
-
-### Versión 2.0 (Planificada)
-- Soporte para Muro 2 y Muro 3
-- Importación directa de datos de Civil3D XML
-- Exportación a formatos CAD
-- Análisis de estabilidad avanzado
-
-### Funcionalidades Avanzadas
-- Visualización 3D de perfiles
-- Comparación entre diferentes escenarios
-- Generación automática de reportes
-- Integración con bases de datos geotécnicas
 
 ## Soporte Técnico
 Para problemas o sugerencias:
 - Repositorio: https://github.com/titoruizh/PLUGIN_Revanchas_LT
-- Email: support@lastortolas.com
+- Email: truizh@linkapsis.com   |    tito.ruiz@usach.cl
 
 ---
 *Plugin desarrollado para Las Tortolas Project - Versión 1.1.0*
