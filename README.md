@@ -90,8 +90,6 @@ PLUGIN_Revanchas_LT/
 ## 📚 Documentación
 
 - [Manual de Usuario](docs/user-manual.md) - Guía completa de uso
-- [Nuevas Funcionalidades](docs/NUEVAS_FUNCIONALIDADES.md) - Detalles técnicos
-- [Documentación de Desarrollo](docs/development/) - Historial técnico
 
 ## 📧 Soporte
 
