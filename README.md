@@ -1,6 +1,6 @@
 # Revanchas LT - QGIS Plugin
 
-**Análisis topográfico automatizado para muros de contención**
+**Análisis topográfico asistido para reportes de los muros de contención de un tranque de relave.**
 
 [![QGIS](https://img.shields.io/badge/QGIS-3.x%2B-green)](https://qgis.org)
 [![Python](https://img.shields.io/badge/Python-3.7%2B-blue)](https://python.org)
@@ -23,6 +23,9 @@ Plugin  para QGIS que simplifica y automatiza el análisis topográfico de muros
 - Selección de punto LAMA en terreno natural
 - Auto-generación de línea de referencia +3m
 - Exportación simplificada (PK + Ancho)
+
+<img width="1843" height="921" alt="principal" src="https://github.com/user-attachments/assets/4a8ed046-8dfb-4ca9-8ef4-72ffe7f1667f" />
+
 
 
 ## � Instalación
