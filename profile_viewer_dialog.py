@@ -1003,6 +1003,12 @@ class InteractiveProfileViewer(QDialog):
             
             self.crown_result.setText(f"Cota Coronamiento: {snap_y:.2f} m")
             
+            # 🆕 Sincronizar medición con ortomosaico
+            self.sync_measurements_to_orthomosaic()
+            
+            # 🆕 Sincronizar medición con ortomosaico
+            self.sync_measurements_to_orthomosaic()
+            
             # Auto-detection for width (unchanged from original)
             if self.auto_width_detection:
                 self.auto_status.setText("🔍 Detectando ancho automáticamente...")
@@ -1028,6 +1034,9 @@ class InteractiveProfileViewer(QDialog):
                     self.width_result.setText(f"Ancho auto-detectado: {width:.2f} m")
                     self.auto_status.setText("✅ Ancho detectado automáticamente")
                     self.auto_status.setStyleSheet("color: green; font-style: italic;")
+                    
+                    # 🆕 Sincronizar medición con ortomosaico
+                    self.sync_measurements_to_orthomosaic()
                     
                     self.set_measurement_mode('width')
                     
@@ -1064,6 +1073,9 @@ class InteractiveProfileViewer(QDialog):
                 self.auto_status.setText("✏️ Medición manual completada")
                 self.auto_status.setStyleSheet("color: blue; font-style: italic;")
                 
+                # 🆕 Sincronizar medición con ortomosaico
+                self.sync_measurements_to_orthomosaic()
+                
                 # Reset for next measurement
                 self.current_width_points = []
         
@@ -1075,6 +1087,9 @@ class InteractiveProfileViewer(QDialog):
                 'x': snap_x,
                 'y': snap_y
             }
+            
+            # 🆕 Sincronizar medición con ortomosaico
+            self.sync_measurements_to_orthomosaic()
             
             self.lama_result.setText(f"Cota LAMA: {snap_y:.2f} m (manual)")
         
@@ -1102,6 +1117,9 @@ class InteractiveProfileViewer(QDialog):
             }
             
             self.crown_result.setText(f"Cota Lama: {snap_y:.2f} m")
+            
+            # 🆕 Sincronizar medición con ortomosaico
+            self.sync_measurements_to_orthomosaic()
             
             # 🆕 Auto-detection: MISMA LÓGICA QUE REVANCHA pero en línea +3m
             print(f"🐛 DEBUG: auto_width_detection = {self.auto_width_detection}")
@@ -1141,6 +1159,9 @@ class InteractiveProfileViewer(QDialog):
                     self.width_result.setText(f"Ancho Proyectado auto: {width:.2f} m")
                     self.auto_status.setText("✅ Ancho proyectado detectado automáticamente")
                     self.auto_status.setStyleSheet("color: green; font-style: italic;")
+                    
+                    # 🆕 Sincronizar medición con ortomosaico
+                    self.sync_measurements_to_orthomosaic()
                     
                     # 🆕 ACTIVAR AUTOMÁTICAMENTE MODO WIDTH para permitir ajustes
                     self.set_measurement_mode('width')
@@ -1215,6 +1236,9 @@ class InteractiveProfileViewer(QDialog):
                 self.width_result.setText(f"Ancho Proyectado: {width:.2f} m (manual)")
                 self.auto_status.setText("✏️ Medición manual completada")
                 self.auto_status.setStyleSheet("color: blue; font-style: italic;")
+                
+                # 🆕 Sincronizar medición con ortomosaico
+                self.sync_measurements_to_orthomosaic()
                 
                 self.current_width_points = []
         
@@ -1378,8 +1402,69 @@ class InteractiveProfileViewer(QDialog):
             try:
                 profile = self.profiles_data[self.current_profile_index]
                 self.ortho_viewer.update_to_profile(profile)
+                
+                # 🆕 Sincronizar mediciones también
+                self.sync_measurements_to_orthomosaic()
+                
             except Exception as e:
                 print(f"Error al actualizar ortomosaico: {str(e)}")
+    
+    def sync_measurements_to_orthomosaic(self):
+        """🆕 Sincroniza las mediciones actuales al ortomosaico"""
+        if not self.ortho_viewer or not hasattr(self.ortho_viewer, 'update_measurements_display'):
+            return
+            
+        try:
+            current_pk = self.profiles_data[self.current_profile_index]['pk']
+            
+            # Obtener mediciones guardadas para el PK actual
+            measurements_data = {}
+            if current_pk in self.saved_measurements:
+                measurements_data = self.saved_measurements[current_pk].copy()
+            
+            # 🔧 CORREGIDO: Añadir puntos LAMA automáticos si no hay manuales
+            profile = self.profiles_data[self.current_profile_index]
+            auto_lama_points = profile.get('lama_points', [])
+            
+            # Si no hay LAMA manual ni lama_selected, usar LAMA automático
+            if (auto_lama_points and 
+                'lama' not in measurements_data and 
+                'lama_selected' not in measurements_data):
+                
+                # Convertir LAMA automático a formato de medición
+                lama_point = auto_lama_points[0]  # Usar el primer punto LAMA
+                measurements_data['lama'] = {
+                    'x': lama_point.get('offset_from_centerline', 0),  # Offset desde el eje
+                    'y': lama_point['elevation']
+                }
+                print(f"DEBUG - LAMA automático agregado: x={lama_point.get('offset_from_centerline', 0):.2f}, y={lama_point['elevation']:.2f}")
+            
+            # Añadir mediciones temporales SOLO si no hay guardadas
+            # Esto evita que las temporales sobrescriban las guardadas al navegar
+            if self.current_crown_point and 'crown' not in measurements_data:
+                measurements_data['crown'] = {
+                    'x': self.current_crown_point[0],
+                    'y': self.current_crown_point[1]
+                }
+            
+            if len(self.current_width_points) >= 2 and 'width' not in measurements_data:
+                measurements_data['width'] = {
+                    'p1': {'x': self.current_width_points[0][0], 'y': self.current_width_points[0][1]},
+                    'p2': {'x': self.current_width_points[1][0], 'y': self.current_width_points[1][1]},
+                    'distance': abs(self.current_width_points[1][0] - self.current_width_points[0][0])
+                }
+            
+            # Enviar mediciones al ortomosaico
+            self.ortho_viewer.update_measurements_display(measurements_data)
+            print(f"DEBUG - Mediciones sincronizadas para PK {current_pk}: {list(measurements_data.keys())}")
+            
+            # 🔧 DEBUG TEMPORAL: Mostrar estructura completa
+            if measurements_data:
+                for key, value in measurements_data.items():
+                    print(f"DEBUG - {key}: {value}")
+            
+        except Exception as e:
+            print(f"ERROR al sincronizar mediciones: {str(e)}")
     
     def load_profile_measurements(self):
         """🔧 Load measurements specific to current PK including different modes"""
@@ -1465,6 +1550,9 @@ class InteractiveProfileViewer(QDialog):
         # 🆕 Update LAMA and Revancha (only in Revancha mode)
         if self.operation_mode == "revancha":
             self.update_revancha_calculation()
+            
+        # 🆕 Sincronizar mediciones cargadas con ortomosaico
+        self.sync_measurements_to_orthomosaic()
     
     def update_profile_display(self):
         """Update the profile visualization including LAMA points and reference lines"""
