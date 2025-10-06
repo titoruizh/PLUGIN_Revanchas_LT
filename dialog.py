@@ -32,6 +32,7 @@ from .core.dem_processor import DEMProcessor
 from .core.alignment_data import AlignmentData
 from .core.profile_generator import ProfileGenerator
 from .core.wall_analyzer import WallAnalyzer
+from .core.project_manager import ProjectManager  # 🆕 Nuevo
 
 # This loads your .ui file so that PyQt can populate your plugin with the elements from Qt Designer
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
@@ -54,14 +55,19 @@ class RevanchasLTDialog(QtWidgets.QDialog, FORM_CLASS):
         self.alignment_data = AlignmentData()
         self.profile_generator = ProfileGenerator()
         self.wall_analyzer = WallAnalyzer()
+        self.project_manager = ProjectManager()  # 🆕 Nuevo
         self.dem_file_path = None
         self.ecw_file_path = None  # New: Store ECW file path
         self.profiles_data = None  # Store generated profiles
+        self._cached_measurements = {}  # 🆕 Cache for measurements when viewer is closed
         
         # Connect signals - UNIFIED: only one button now
         self.browse_dem_button.clicked.connect(self.browse_dem_file)
         self.browse_ecw_button.clicked.connect(self.browse_ecw_file)  # New: ECW browse button
         self.generate_profiles_button.clicked.connect(self.generate_and_visualize_profiles)
+        
+        # 🆕 Project Management buttons - Create and connect them dynamically
+        self.setup_project_management_buttons()
         
         # Initially disable button that requires DEM
         self.generate_profiles_button.setEnabled(False)
@@ -318,8 +324,21 @@ class RevanchasLTDialog(QtWidgets.QDialog, FORM_CLASS):
             # 🚀 Launch interactive viewer directly
             try:
                 from .profile_viewer_dialog import InteractiveProfileViewer
-                viewer = InteractiveProfileViewer(self.profiles_data, self, self.ecw_file_path)
-                viewer.exec_()
+                self.profile_viewer = InteractiveProfileViewer(self.profiles_data, self, self.ecw_file_path)
+                
+                # 🔄 Connect close event to cache measurements
+                self.profile_viewer.finished.connect(self.on_profile_viewer_closed)
+                
+                # 🆕 Restore cached measurements if available (from loaded project)
+                if hasattr(self, '_cached_measurements') and self._cached_measurements:
+                    print(f"🔄 Restaurando {len(self._cached_measurements.get('saved_measurements', {}))} mediciones cacheadas...")
+                    try:
+                        self.profile_viewer.restore_measurements(self._cached_measurements)
+                        print("✅ Mediciones restauradas exitosamente")
+                    except Exception as e:
+                        print(f"⚠️ Error al restaurar mediciones: {e}")
+                
+                self.profile_viewer.exec_()
                 
             except ImportError as ie:
                 QMessageBox.critical(
@@ -382,3 +401,243 @@ class RevanchasLTDialog(QtWidgets.QDialog, FORM_CLASS):
                     "Error de exportación",
                     f"No se pudo exportar los perfiles:\n{str(e)}"
                 )
+    
+    # 🆕 PROJECT MANAGEMENT METHODS
+    
+    def setup_project_management_buttons(self):
+        """Create project management buttons dynamically"""
+        from PyQt5.QtWidgets import QPushButton, QHBoxLayout
+        
+        # Create buttons
+        self.save_project_button = QPushButton("💾 Guardar Proyecto")
+        self.load_project_button = QPushButton("📂 Cargar Proyecto")
+        
+        # Set button styles
+        button_style = """
+        QPushButton {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        QPushButton:hover {
+            background-color: #45a049;
+        }
+        QPushButton:pressed {
+            background-color: #3d8b40;
+        }
+        """
+        
+        load_button_style = """
+        QPushButton {
+            background-color: #2196F3;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        QPushButton:hover {
+            background-color: #1976D2;
+        }
+        QPushButton:pressed {
+            background-color: #1565C0;
+        }
+        """
+        
+        self.save_project_button.setStyleSheet(button_style)
+        self.load_project_button.setStyleSheet(load_button_style)
+        
+        # Connect buttons
+        self.save_project_button.clicked.connect(self.save_project)
+        self.load_project_button.clicked.connect(self.load_project)
+        
+        # Add to layout (assuming there's a main layout)
+        if hasattr(self, 'layout') and self.layout():
+            project_layout = QHBoxLayout()
+            project_layout.addWidget(self.save_project_button)
+            project_layout.addWidget(self.load_project_button)
+            self.layout().addLayout(project_layout)
+    
+    def save_project(self):
+        """Save current project state"""
+        try:
+            # Get measurements from profile viewer if open or closed
+            saved_measurements = {}
+            operation_mode = "measurement"  # default
+            auto_width_detection = False   # default
+            
+            if hasattr(self, 'profile_viewer') and self.profile_viewer:
+                # Profile viewer is still open - get current measurements
+                measurements_data = self.profile_viewer.get_all_measurements()
+                saved_measurements = measurements_data.get('saved_measurements', {})
+                operation_mode = measurements_data.get('operation_mode', 'measurement')
+                auto_width_detection = measurements_data.get('auto_detection_enabled', False)
+            elif hasattr(self, '_cached_measurements') and self._cached_measurements:
+                # Profile viewer was closed but we have cached data
+                saved_measurements = self._cached_measurements.get('saved_measurements', {})
+                operation_mode = self._cached_measurements.get('operation_mode', 'measurement')
+                auto_width_detection = self._cached_measurements.get('auto_detection_enabled', False)
+            
+            # Validate that we have the minimum required data
+            if not self.selected_wall:
+                QMessageBox.warning(
+                    self,
+                    "Datos incompletos",
+                    "Debe seleccionar un muro antes de guardar el proyecto."
+                )
+                return
+            
+            # Save project using ProjectManager (it handles file dialog internally)
+            success, file_path = self.project_manager.save_project(
+                wall_name=self.selected_wall,
+                dem_path=self.dem_file_path,
+                ecw_path=self.ecw_file_path,
+                saved_measurements=saved_measurements,
+                operation_mode=operation_mode,
+                auto_width_detection=auto_width_detection,
+                parent_widget=self
+            )
+            
+            if not success:
+                QMessageBox.warning(
+                    self,
+                    "Guardado cancelado",
+                    "El guardado del proyecto fue cancelado."
+                )
+                
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Error de Guardado",
+                f"Error al guardar el proyecto:\n{str(e)}"
+            )
+    
+    def load_project(self):
+        """Load project from file"""
+        try:
+            print("🔄 Iniciando carga de proyecto...")
+            
+            # Import QMessageBox explicitly to avoid conflicts
+            from PyQt5.QtWidgets import QMessageBox as MsgBox
+            
+            # Load project using ProjectManager (it handles file dialog internally)
+            success, project_data = self.project_manager.load_project(parent_widget=self)
+            
+            print(f"📋 ProjectManager retornó: success={success}, data={project_data is not None}")
+            
+            if not success:
+                print("ℹ️ Carga cancelada por el usuario o error en ProjectManager")
+                return
+                
+            if not project_data:
+                print("⚠️ project_data está vacío")
+                MsgBox.warning(
+                    self,
+                    "Error de Carga",
+                    "No se pudo cargar el proyecto. El archivo puede estar corrupto."
+                )
+                return
+            
+            print("📊 Extrayendo datos del proyecto...")
+            
+            # Extract data from project structure
+            file_paths = project_data.get('file_paths', {})
+            project_settings = project_data.get('project_settings', {})
+            measurements_data = project_data.get('measurements_data', {})
+            
+            print(f"📁 file_paths: {list(file_paths.keys())}")
+            print(f"⚙️ project_settings: {list(project_settings.keys())}")
+            print(f"📏 measurements_data: {len(measurements_data)} mediciones")
+            
+            # Restore project state
+            self.dem_file_path = file_paths.get('dem_path')
+            self.ecw_file_path = file_paths.get('ecw_path')
+            self.selected_wall = project_settings.get('wall_name')
+            
+            print(f"🎯 Estado restaurado: muro={self.selected_wall}, dem={bool(self.dem_file_path)}, ecw={bool(self.ecw_file_path)}")
+            
+            # Update UI elements
+            if hasattr(self, 'dem_path_label') and self.dem_file_path:
+                self.dem_path_label.setText(f"DEM: {os.path.basename(self.dem_file_path)}")
+                print("📁 DEM label actualizado")
+                
+                # Update DEM info if exists
+                if hasattr(self, 'dem_info_label'):
+                    if os.path.exists(self.dem_file_path):
+                        self.dem_info_label.setText("✅ Archivo DEM cargado desde proyecto")
+                    else:
+                        self.dem_info_label.setText("⚠️ Archivo DEM no encontrado en la ruta guardada")
+            
+            if hasattr(self, 'ecw_path_label') and self.ecw_file_path:
+                self.ecw_path_label.setText(f"ECW: {os.path.basename(self.ecw_file_path)}")
+                print("🗺️ ECW label actualizado")
+                
+                # Update ECW info if exists
+                if hasattr(self, 'ecw_info_label'):
+                    if os.path.exists(self.ecw_file_path):
+                        self.ecw_info_label.setText("✅ Archivo ECW cargado desde proyecto")
+                    else:
+                        self.ecw_info_label.setText("⚠️ Archivo ECW no encontrado en la ruta guardada")
+                
+            if hasattr(self, 'wall_combo') and self.selected_wall:
+                wall_index = self.wall_combo.findText(self.selected_wall)
+                if wall_index >= 0:
+                    self.wall_combo.setCurrentIndex(wall_index)
+                    print(f"🎯 Wall combo actualizado al índice {wall_index}")
+            
+            # Cache the loaded measurements for future save operations
+            if measurements_data:
+                self._cached_measurements = {
+                    'saved_measurements': measurements_data,
+                    'operation_mode': project_settings.get('operation_mode', 'measurement'),
+                    'auto_detection_enabled': project_settings.get('auto_width_detection', False)
+                }
+                print(f"📦 Cached {len(measurements_data)} mediciones")
+            else:
+                self._cached_measurements = {}
+                print("📦 No hay mediciones para cachear")
+            
+            print("✅ Proyecto cargado exitosamente")
+            
+            # Check if we can enable "Generate Profiles" button
+            if (self.selected_wall and self.dem_file_path and 
+                os.path.exists(self.dem_file_path) and 
+                hasattr(self, 'generate_profiles_button')):
+                
+                self.generate_profiles_button.setEnabled(True)
+                print("🚀 Botón 'Generar Perfiles' habilitado automáticamente")
+                
+                # Update button text to indicate ready state
+                if hasattr(self, 'generate_profiles_button'):
+                    self.generate_profiles_button.setText("🚀 Generar y Visualizar Perfiles (Proyecto Cargado)")
+            
+            # Note: ProjectManager already shows success message, so we don't duplicate it
+            
+        except Exception as e:
+            print(f"❌ Error en load_project: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            # Use explicit import to avoid conflicts
+            from PyQt5.QtWidgets import QMessageBox as MsgBox
+            MsgBox.critical(
+                self,
+                "Error de Carga",
+                f"Error al cargar el proyecto:\n{str(e)}"
+            )
+    
+    def on_profile_viewer_closed(self):
+        """Cache measurements when profile viewer is closed"""
+        try:
+            if hasattr(self, 'profile_viewer') and self.profile_viewer:
+                # Cache all measurements before the viewer is destroyed
+                self._cached_measurements = self.profile_viewer.get_all_measurements()
+                print(f"📦 Cached {len(self._cached_measurements.get('saved_measurements', {}))} measurements")
+            else:
+                self._cached_measurements = {}
+        except Exception as e:
+            print(f"⚠️ Error caching measurements: {e}")
+            self._cached_measurements = {}

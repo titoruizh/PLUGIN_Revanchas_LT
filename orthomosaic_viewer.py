@@ -684,22 +684,26 @@ class OrthomosaicViewer(QDialog):
     def _show_width_line(self, point1, point2):
         """Mostrar línea de ancho medido en el ortomosaico"""
         try:
-            # 🔧 CORREGIDO: Manejar ambos formatos de puntos
-            # Formato desde saved_measurements: (x, y)
+            # 🔧 CORREGIDO: Manejar múltiples formatos de puntos
+            # Formato desde saved_measurements: (x, y) o [x, y]
             # Formato desde current_width_points convertido: {'x': x, 'y': y}
             
-            if isinstance(point1, tuple):
-                # Formato de tupla (x, y)
-                x1, y1 = point1
-                x2, y2 = point2
+            if isinstance(point1, (tuple, list)):
+                # Formato de tupla (x, y) o lista [x, y]
+                x1, y1 = point1[0], point1[1]
+                x2, y2 = point2[0], point2[1]
             else:
                 # Formato de diccionario {'x': x, 'y': y}
                 x1, y1 = point1['x'], point1['y']
                 x2, y2 = point2['x'], point2['y']
             
+            print(f"DEBUG - Puntos de ancho convertidos: P1=({x1:.2f}, {y1:.2f}), P2=({x2:.2f}, {y2:.2f})")
+            
             # Convertir ambos puntos a coordenadas del mundo
             world_x1, world_y1 = self._convert_profile_to_world_coords(x1, y1)
             world_x2, world_y2 = self._convert_profile_to_world_coords(x2, y2)
+            
+            print(f"DEBUG - Puntos de ancho en mundo: P1=({world_x1:.2f}, {world_y1:.2f}), P2=({world_x2:.2f}, {world_y2:.2f})")
             
             # Crear línea entre los dos puntos
             line_points = [
@@ -720,5 +724,9 @@ class OrthomosaicViewer(QDialog):
             self.width_rubber.setWidth(4)
             self.width_rubber.setLineStyle(Qt.SolidLine)
             
+            print(f"✅ Línea de ancho mostrada en ortomosaico")
+            
         except Exception as e:
             print(f"ERROR al mostrar línea de ancho: {str(e)}")
+            import traceback
+            traceback.print_exc()

@@ -1415,12 +1415,20 @@ class InteractiveProfileViewer(QDialog):
             return
             
         try:
-            current_pk = self.profiles_data[self.current_profile_index]['pk']
+            # Get current PK with fallback for different naming conventions
+            profile = self.profiles_data[self.current_profile_index]
+            current_pk = profile.get('pk') or profile.get('PK')
+            
+            print(f"🔍 DEBUG - Syncing for PK: {current_pk} (profile index: {self.current_profile_index})")
             
             # Obtener mediciones guardadas para el PK actual
             measurements_data = {}
             if current_pk in self.saved_measurements:
                 measurements_data = self.saved_measurements[current_pk].copy()
+                print(f"🔍 DEBUG - Found saved measurements for {current_pk}: {list(measurements_data.keys())}")
+            else:
+                print(f"⚠️ DEBUG - No saved measurements found for PK {current_pk}")
+                print(f"📊 DEBUG - Available PKs in saved_measurements: {list(self.saved_measurements.keys())}")
             
             # 🔧 CORREGIDO: Añadir puntos LAMA automáticos si no hay manuales
             profile = self.profiles_data[self.current_profile_index]
@@ -2118,4 +2126,116 @@ class InteractiveProfileViewer(QDialog):
     def on_ortho_viewer_closed(self):
         """🆕 Limpia la referencia al visualizador cuando se cierra"""
         print("Visualizador de ortomosaico cerrado")
-        self.ortho_viewer = None
+    
+    # 🆕 PROJECT MANAGEMENT METHODS
+    
+    def get_all_measurements(self):
+        """Get all measurements for project saving"""
+        return {
+            'saved_measurements': self.saved_measurements,
+            'current_temp_crown': getattr(self, 'current_temp_crown', None),
+            'current_temp_width': getattr(self, 'current_temp_width', None),
+            'current_temp_lama': getattr(self, 'current_temp_lama', None),
+            'lama_points_data': getattr(self, 'lama_points_data', {}),
+            'current_pk': getattr(self, 'current_pk', None),
+            'measurement_mode': getattr(self, 'measurement_mode', 'crown'),
+            'operation_mode': getattr(self, 'operation_mode', 'measurement'),
+            'auto_detection_enabled': getattr(self, 'auto_detection_enabled', False)
+        }
+    
+    def restore_measurements(self, measurements_data):
+        """Restore measurements from project data"""
+        try:
+            if not measurements_data:
+                print("No measurements data to restore")
+                return
+            
+            # Handle different measurement data formats
+            if 'saved_measurements' in measurements_data:
+                # New format: measurements in saved_measurements structure
+                self.saved_measurements = measurements_data.get('saved_measurements', {})
+                
+                # Restore current temporary measurements
+                self.current_temp_crown = measurements_data.get('current_temp_crown')
+                self.current_temp_width = measurements_data.get('current_temp_width')
+                self.current_temp_lama = measurements_data.get('current_temp_lama')
+                
+                # Restore LAMA points data
+                if 'lama_points_data' in measurements_data:
+                    self.lama_points_data = measurements_data['lama_points_data']
+                
+                # Restore UI state
+                if 'measurement_mode' in measurements_data:
+                    self.measurement_mode = measurements_data['measurement_mode']
+                    self.set_measurement_mode(self.measurement_mode)
+                
+                if 'operation_mode' in measurements_data:
+                    self.operation_mode = measurements_data['operation_mode']
+                    self.update_ui_for_operation_mode()
+                
+                if 'auto_detection_enabled' in measurements_data:
+                    self.auto_detection_enabled = measurements_data['auto_detection_enabled']
+                    if hasattr(self, 'auto_detection_btn'):
+                        self.auto_detection_btn.setChecked(self.auto_detection_enabled)
+                
+                # If we have a current PK, restore to that profile
+                if 'current_pk' in measurements_data and measurements_data['current_pk']:
+                    target_pk = measurements_data['current_pk']
+                    # Find and set the correct profile
+                    for i, profile in enumerate(self.profiles_data):
+                        if profile.get('PK') == target_pk:
+                            if hasattr(self, 'profile_combo'):
+                                self.profile_combo.setCurrentIndex(i)
+                            self.current_pk = target_pk
+                            break
+            else:
+                # Legacy format: measurements directly as PK keys
+                self.saved_measurements = {}
+                first_pk_with_measurements = None
+                
+                # Convert direct PK format to saved_measurements format
+                for pk, measurement_data in measurements_data.items():
+                    if isinstance(measurement_data, dict) and ('crown' in measurement_data or 'width' in measurement_data):
+                        self.saved_measurements[pk] = measurement_data
+                        if first_pk_with_measurements is None:
+                            first_pk_with_measurements = pk
+                        
+                        # Detailed debug info
+                        crown_info = f"Crown: ({measurement_data['crown']['x']:.2f}, {measurement_data['crown']['y']:.2f})" if 'crown' in measurement_data else "No Crown"
+                        width_info = f"Width: {measurement_data['width']['distance']:.2f}m" if 'width' in measurement_data else "No Width"
+                        print(f"📏 Restored measurement for PK {pk}: {crown_info}, {width_info}")
+                
+                print(f"🗂️ Total measurements restored: {len(self.saved_measurements)}")
+                print(f"📋 PKs with measurements: {list(self.saved_measurements.keys())}")
+                
+                # Set the first PK with measurements as current
+                if first_pk_with_measurements and hasattr(self, 'profiles_data'):
+                    for i, profile in enumerate(self.profiles_data):
+                        profile_pk = profile.get('PK') or profile.get('pk')
+                        if profile_pk == first_pk_with_measurements:
+                            if hasattr(self, 'profile_combo'):
+                                self.profile_combo.setCurrentIndex(i)
+                                self.current_profile_index = i
+                            self.current_pk = first_pk_with_measurements
+                            print(f"🎯 Set initial PK to {first_pk_with_measurements} (index {i})")
+                            break
+                    else:
+                        print(f"⚠️ Could not find profile for PK {first_pk_with_measurements} in profiles_data")
+                        if hasattr(self, 'profiles_data') and self.profiles_data:
+                            available_pks = [p.get('PK') or p.get('pk') for p in self.profiles_data]
+                            print(f"📊 Available profile PKs: {available_pks}")
+                else:
+                    print(f"⚠️ No PKs with measurements found or no profiles_data available")
+            
+            # Refresh display
+            self.update_profile_display()
+            
+            # Sync measurements to orthomosaic if it exists
+            self.sync_measurements_to_orthomosaic()
+            
+            print(f"✅ Mediciones restauradas: {len(self.saved_measurements)} perfiles con datos")
+            
+        except Exception as e:
+            print(f"❌ Error al restaurar mediciones: {str(e)}")
+            import traceback
+            traceback.print_exc()

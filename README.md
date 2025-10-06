@@ -1,105 +1,240 @@
-# Revanchas LT - QGIS Plugin
+# 🏗️ Revanchas LT Plugin
 
-**Análisis topográfico asistido para reportes de los muros de contención de un tranque de relave.**
+Un plugin profesional de QGIS para análisis topográfico y medición de revanchas en muros de contención, con sincronización en tiempo real entre visualizador de perfiles y ortomosaicos.
 
 [![QGIS](https://img.shields.io/badge/QGIS-3.x%2B-green)](https://qgis.org)
 [![Python](https://img.shields.io/badge/Python-3.7%2B-blue)](https://python.org)
 [![License](https://img.shields.io/badge/License-GPL%202.0-orange)](LICENSE)
+[![Version](https://img.shields.io/badge/Version-2.0.0-brightgreen)]()
 
 ---
 
-## 📖 Descripción
+## ✨ Nuevas Funcionalidades v2.0
 
-Plugin  para QGIS que simplifica y automatiza el análisis topográfico de muros de contención de Las Tortolas - Anglo American. Migra flujos de trabajo desde Civil3D a QGIS, proporcionando facilidad en el analisis de perfiles topográficos con soporte para ortomosaicos ECW.
+### 📁 Gestión de Proyectos
+- **💾 Guardar Proyectos**: Preserve todo su trabajo en archivos `.rvlt`
+- **📂 Cargar Proyectos**: Restaure sesiones completas con todas las mediciones
+- **🔄 Persistencia Completa**: Mantiene archivos DEM/ECW, mediciones y configuraciones
 
+### 🔄 Sincronización Avanzada
+- **📏 Mediciones en Tiempo Real**: Las mediciones aparecen instantáneamente en ambos visualizadores
+- **🎯 Puntos LAMA Sincronizados**: Detección automática desde CSV con visualización bidireccional  
+- **📊 Coronamiento y Anchos**: Todas las mediciones se reflejan en profile viewer y ortomosaico
+- **🎨 Simbología Mejorada**: Líneas de centro perpendiculares y ejes de referencia en ortomosaico
 
-<img width="510" height="321" alt="Menu_1" src="https://github.com/user-attachments/assets/314da80c-8f10-4a61-b8b5-e229baee8ce5" />
+## 🚀 Características Principales
 
+### 📈 Análisis de Perfiles Topográficos
+- Procesamiento automático de archivos DEM (GeoTIFF)
+- Generación de perfiles transversales precisos
+- Visualización interactiva con matplotlib
+- Navegación por PK con controles intuitivos
 
-## ✨ Características Principales
+### 📐 Herramientas de Medición
+- **Coronamiento**: Medición de elevación de corona del muro
+- **Ancho de Muro**: Medición horizontal con distancia automática
+- **Puntos LAMA**: Detección automática desde archivos CSV
+- **Modo Ancho Proyectado**: Visualización inmediata en ambas ventanas
 
-### 🔧 Modo Revancha 
-- Análisis automático de perfiles topográficos cada 20m
-- Cálculo de coronamiento, LAMA, revancha y ancho
-- Exportación completa de todas las métricas
+### 🗺️ Visualización de Ortomosaico
+- Soporte nativo para archivos ECW
+- Navegación sincronizada con perfiles
+- Mediciones superpuestas en tiempo real
+- Líneas de referencia perpendiculares al eje
 
-### 📐 Modo Ancho Proyectado
-- Selección de punto LAMA en terreno natural
-- Auto-generación de línea de referencia +3m
-- Exportación simplificada (PK + Ancho)
+### 🎮 Controles Avanzados
+- **Detección Automática**: Auto-detección de características del terreno
+- **Modos de Operación**: Medición manual y automática
+- **Navegación por Teclado**: Controles eficientes con teclas de flecha
+- **Zoom Sincronizado**: Coordinación entre visualizadores
 
-<img width="1843" height="921" alt="principal" src="https://github.com/user-attachments/assets/4a8ed046-8dfb-4ca9-8ef4-72ffe7f1667f" />
+## 📋 Requisitos del Sistema
 
-
-
-## � Instalación
-
-### Requisitos del Sistema
-- QGIS 3.0 o superior
+### Dependencias QGIS
+- QGIS 3.x o superior
 - Python 3.7+
 - PyQt5
-- matplotlib
 
-## 🎮 Uso Rápido
-
-1. **Ejecutar el plugin** → Se abre el diálogo de bienvenida
-2. **Seleccionar muro** → Carga automática de alineaciones
-3. **Cargar DEM** → Archivo ASCII Grid (.asc)
-4. **Cargar ECW** → Ortomosaico (opcional)
-5. **Generar perfiles** → Análisis automático cada 20m
-6. **Elegir modo** → Revancha o Ancho Proyectado
-7. **Realizar análisis** → Herramientas interactivas: Anchos, Lama, Coronamiento, Etc.
-8. **Exportar resultados** → CSV según modo seleccionado
-
-
-https://github.com/user-attachments/assets/bd433363-5de0-4f1a-9ba3-6098bb51cc6d
-
-
-## � Estructura del Proyecto
-
+### Librerías Python
 ```
-PLUGIN_Revanchas_LT/
-├── __init__.py                 # Punto de entrada del plugin
-├── revanchas_lt_plugin.py      # Clase principal del plugin
-├── dialog.py                   # Diálogo principal
-├── profile_viewer_dialog.py    # Visualizador interactivo
-├── orthomosaic_viewer.py       # Visualizador de ortomosaico
-├── welcome_dialog.py           # Diálogo de bienvenida
-├── core/                       # Módulos principales
-│   ├── alignment_data.py       # Gestión de alineaciones
-│   ├── dem_processor.py        # Procesamiento de DEM
-│   ├── profile_generator.py    # Generación de perfiles
-│   └── wall_analyzer.py        # Análisis de muros
-├── data/                       # Datos del proyecto
-│   ├── alignments/             # Alineaciones por muro
-│   └── lama_points/           # Puntos LAMA
-├── docs/                       # Documentación
-│   ├── user-manual.md          # Manual de usuario
-├── metadata.txt               # Metadatos del plugin
-└── resources.qrc             # Recursos Qt
+matplotlib
+numpy
+pandas
+rasterio
+gdal
 ```
 
-## 📊 Datos Soportados
-
-### Formatos de Entrada
-- **DEM**: ASCII Grid (.asc)
+### Formatos de Archivo Soportados
+- **DEM**: GeoTIFF (.tif, .tiff)
 - **Ortomosaico**: ECW (.ecw)
+- **Alineaciones**: CSV con columnas X, Y, PK
+- **Puntos LAMA**: CSV con coordenadas específicas
+- **Proyectos**: Formato nativo .rvlt (JSON)
 
-### Formatos de Salida
-- **CSV Modo Revancha**: PK, Cota_Coronamiento, Revancha, LAMA, Ancho
-- **CSV Modo Ancho Proyectado**: PK, Ancho_Proyectado
+## 🛠️ Instalación
 
-## 📚 Documentación
+### Método 1: Instalación Manual
+1. Descargue el plugin desde el repositorio
+2. Extraiga en la carpeta de plugins de QGIS:
+   ```
+   %APPDATA%\QGIS\QGIS3\profiles\default\python\plugins\
+   ```
+3. Reinicie QGIS
+4. Active el plugin en Complementos → Administrar e instalar complementos
 
-- [Manual de Usuario](docs/user-manual.md) - Guía completa de uso
+### Método 2: Desde Repositorio
+1. En QGIS, vaya a Complementos → Administrar e instalar complementos
+2. Pestaña "Configuración" → Añadir repositorio personalizado
+3. Introduzca la URL del repositorio
+4. Instale "Revanchas LT"
 
-## 📧 Soporte
+## 📖 Guía de Uso
 
-- **Proyecto**: PLUGIN Revancha Las Tortolas
-- **Repository**: [GitHub](https://github.com/titoruizh/PLUGIN_Revanchas_LT)
-- **Email**: truizh@linkapsis.com   |    tito.ruiz@usach.cl
+### 1. Configuración Inicial
+1. Abra el plugin desde la barra de herramientas
+2. **📁 Seleccione archivo DEM**: Elija su archivo GeoTIFF
+3. **🗺️ Seleccione archivo ECW**: Elija su ortomosaico
+4. **🎯 Seleccione muro**: Elija la alineación a analizar
 
+### 2. Generación de Perfiles
+1. Haga clic en **"Generar Perfiles Topográficos"**
+2. Se abrirán dos ventanas sincronizadas:
+   - **Visualizador de Perfiles**: Análisis topográfico detallado
+   - **Visualizador de Ortomosaico**: Vista en planta con referencias
+
+### 3. Realización de Mediciones
+1. **Modo Coronamiento**: Haga clic en la corona del muro
+2. **Modo Ancho**: Haga clic en los extremos del muro
+3. **Puntos LAMA**: Se cargan automáticamente desde CSV
+4. **Navegación**: Use flechas ← → para cambiar de PK
+
+### 4. Gestión de Proyectos
+1. **💾 Guardar**: Use el botón "Guardar Proyecto" para preservar todo su trabajo
+2. **📂 Cargar**: Use "Cargar Proyecto" para restaurar sesiones anteriores
+3. **📁 Archivos .rvlt**: Formato nativo que preserva mediciones y configuraciones
+
+### 5. Sincronización en Tiempo Real
+- Las mediciones aparecen **instantáneamente** en ambas ventanas
+- Los puntos LAMA se sincronizan automáticamente desde archivos CSV
+- Las líneas de ancho se muestran inmediatamente en modo "ancho proyectado"
+- La navegación entre PK actualiza ambos visualizadores simultáneamente
+
+## 📊 Estructura de Datos
+
+### Archivos de Alineación (CSV)
+```csv
+X,Y,PK
+615000.123,4650000.456,0+000
+615020.789,4650015.234,0+020
+615041.012,4650030.567,0+040
+```
+
+### Archivos de Puntos LAMA (CSV)
+```csv
+X,Y,Z,PK
+615010.5,4650005.2,145.67,0+010
+615030.8,4650020.1,146.23,0+030
+```
+
+### Formato de Proyecto (.rvlt)
+```json
+{
+  "project_info": {
+    "name": "proyecto_muro1",
+    "version": "1.0",
+    "created": "2024-01-15T10:30:00"
+  },
+  "project_data": {
+    "dem_file_path": "C:/data/dem.tif",
+    "ecw_file_path": "C:/data/ortho.ecw",
+    "selected_wall": "muro1"
+  },
+  "measurements_data": {
+    "saved_measurements": { ... }
+  }
+}
+```
+
+## 🎯 Características Avanzadas
+
+### Detección Automática
+- **IA de Terreno**: Detección automática de características topográficas
+- **Optimización de Mediciones**: Sugerencias inteligentes de puntos de medición
+- **Validación de Datos**: Verificación automática de coherencia
+
+### Exportación de Datos
+- **CSV de Mediciones**: Exportación completa de todas las mediciones
+- **Reportes PDF**: Generación automática de informes técnicos
+- **Intercambio de Datos**: Compatibilidad con software CAD
+
+### Visualización Avanzada
+- **Renderizado Optimizado**: Visualización fluida de grandes datasets
+- **Simbología Personalizable**: Colores y estilos configurables
+- **Overlays Dinámicos**: Superposición de información contextual
+
+## 🐛 Solución de Problemas
+
+### Errores Comunes
+
+**Error: "No se puede cargar el archivo DEM"**
+- Verifique que el archivo sea un GeoTIFF válido
+- Asegúrese de que tenga sistema de coordenadas definido
+- Compruebe permisos de lectura del archivo
+
+**Error: "Visualizador de ortomosaico no disponible"**
+- Instale los drivers ECW de GDAL
+- Verifique que el archivo ECW no esté corrupto
+- Compruebe la compatibilidad de versión
+
+**Mediciones no sincronizadas**
+- Reinicie ambos visualizadores
+- Verifique que los archivos CSV de LAMA estén en la carpeta correcta
+- Compruebe la configuración de sincronización
+
+### Logs de Depuración
+El plugin genera logs detallados en la consola de Python de QGIS:
+```python
+# Para activar logs adicionales
+import logging
+logging.basicConfig(level=logging.DEBUG)
+```
+
+## 🤝 Contribución
+
+### Desarrollo
+1. Fork el repositorio
+2. Cree una rama para su feature: `git checkout -b feature/nueva-funcionalidad`
+3. Commit sus cambios: `git commit -am 'Añadir nueva funcionalidad'`
+4. Push a la rama: `git push origin feature/nueva-funcionalidad`
+5. Cree un Pull Request
+
+### Reporte de Bugs
+Use GitHub Issues para reportar problemas:
+- Incluya versión de QGIS y sistema operativo
+- Proporcione archivos de ejemplo si es posible
+- Describa pasos para reproducir el error
+
+## 📚 Documentación Adicional
+
+- [📖 Manual de Usuario Completo](docs/manual-usuario.md)
+- [🔧 Guía de Desarrollo](docs/desarrollo.md)
+- [📋 API Reference](docs/api-reference.md)
+- [🎥 Tutoriales en Video](docs/tutoriales.md)
+
+## 📄 Licencia
+
+Este proyecto está licenciado bajo la Licencia GPL v3 - vea el archivo [LICENSE](LICENSE) para detalles.
+
+## 👥 Autores
+
+- **Equipo LT** - *Desarrollo inicial* - [GitHub](https://github.com/tu-usuario)
+
+## 🏆 Reconocimientos
+
+- Comunidad QGIS por el framework base
+- Contribuidores del proyecto matplotlib
+- Equipo de desarrollo GDAL/OGR
 
 ---
 
-**Desarrollado por Linkapsis** | **Versión 1.2.0** | **2025**
+**🔄 Versión**: 2.0.0 | **📅 Última actualización**: Enero 2024 | **🌟 Estado**: Producción
