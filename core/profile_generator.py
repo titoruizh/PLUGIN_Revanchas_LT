@@ -68,9 +68,9 @@ class ProfileGenerator:
                 progress = i / total_stations
                 progress_callback(progress)
             
-            # Generate cross-section points (high resolution)
+            # Generate cross-section points (high resolution, full width)
             cross_section_points = self.alignment_data.get_cross_section_points(
-                station, width=80.0, resolution=resolution
+                station, width=140.0, resolution=resolution
             )
             
             elevations = []
@@ -95,7 +95,7 @@ class ProfileGenerator:
                 'distances': distances,
                 'elevations': elevations,
                 'coordinates': coordinates,
-                'width': 80.0,
+                'width': 140.0,  # Full width: ±70m
                 'resolution': resolution,
                 'total_points': len(distances),
                 'valid_points': len([e for e in elevations if e != dem_data['header'].get('nodata_value', -9999)])
@@ -128,8 +128,8 @@ class ProfileGenerator:
         
         return profiles
     
-    def generate_single_profile(self, dem_data, station, width=80.0, resolution=0.1):
-        """Generate a single high-res profile"""
+    def generate_single_profile(self, dem_data, station, width=140.0, resolution=0.1):
+        """Generate a single high-res profile with full width (±70m)"""
         cross_section_points = self.alignment_data.get_cross_section_points(
             station, width=width, resolution=resolution
         )

@@ -47,7 +47,7 @@ class OrthomosaicViewer(QDialog):
         self.y_coord = y_coord
         self.profile_pk = profile_pk
         self.bearing = bearing  # Ángulo de dirección de la alineación
-        self.profile_width = 80.0  # Ancho total del perfil (-40m a +40m)
+        self.profile_width = 140.0  # Ancho total del perfil (-70m a +70m, visualización inicial: ±40m)
         self.zoom_size = 100  # default zoom extents in meters
         
         # 🆕 Establecer ventana como no modal para permitir interacción con el visualizador de perfiles
@@ -226,7 +226,7 @@ class OrthomosaicViewer(QDialog):
         try:
             print("DEBUG - Añadiendo visualización de perfil con RubberBand...")
             
-            # Obtener coordenadas para línea perpendicular (-40m a +40m)
+            # Obtener coordenadas para línea perpendicular (-70m a +70m)
             perp_coords = self._calculate_perpendicular_line()
             
             # Crear los puntos para la línea del perfil
@@ -301,7 +301,7 @@ class OrthomosaicViewer(QDialog):
             # Mostrar información en la barra de estado
             self.status_bar.showMessage(
                 f"Perfil {self.profile_pk} visualizado: X={self.x_coord:.2f}, Y={self.y_coord:.2f}" +
-                f"{bearing_info}, Ancho={self.profile_width}m (-40m a +40m)"
+                f"{bearing_info}, Ancho={self.profile_width}m (-70m a +70m)"
             )
             
             print("DEBUG - Visualización de perfil completada con RubberBand")
@@ -337,10 +337,10 @@ class OrthomosaicViewer(QDialog):
         print(f"  - Perpendicular en radianes: {perp_bearing_rad:.6f}")
         print(f"  - Perpendicular en grados: {math.degrees(perp_bearing_rad):.2f}°")
         
-        # Mitad del ancho del perfil (40 metros a cada lado)
+        # Mitad del ancho del perfil (70 metros a cada lado)
         half_width = self.profile_width / 2
         
-        # Calcular punto izquierdo (-40m)
+        # Calcular punto izquierdo (-70m)
         left_x = self.x_coord + half_width * math.cos(perp_bearing_rad)
         left_y = self.y_coord + half_width * math.sin(perp_bearing_rad)
         
@@ -370,7 +370,7 @@ class OrthomosaicViewer(QDialog):
     def _convert_profile_to_world_coords(self, profile_x, profile_y):
         """🆕 Convierte coordenadas del perfil (relativas) a coordenadas del mundo real"""
         try:
-            # profile_x es la distancia desde el eje de alineación (-40m a +40m)
+            # profile_x es la distancia desde el eje de alineación (-70m a +70m)
             # profile_y es la elevación del terreno
             
             # Calcular bearing perpendicular para obtener la dirección correcta
@@ -459,7 +459,7 @@ class OrthomosaicViewer(QDialog):
             print("ERROR - No hay capa raster disponible para mostrar")
         
         # Crear rectángulo de zoom con un poco más de margen para visualizar bien el perfil
-        # Asegurar que el zoom muestre el perfil completo de -40m a +40m
+        # Asegurar que el zoom muestre el perfil completo de -70m a +70m
         margin = max(self.zoom_size, self.profile_width + 20) / 2
         
         zoom_rect = QgsRectangle(
@@ -477,7 +477,7 @@ class OrthomosaicViewer(QDialog):
         # Actualizar mensaje de la barra de estado
         self.status_bar.showMessage(
             f"Perfil {self.profile_pk}: X={self.x_coord:.2f}, Y={self.y_coord:.2f} | " +
-            f"Ancho={self.profile_width}m (-40m a +40m) | Zoom: {self.zoom_size}m"
+            f"Ancho={self.profile_width}m (-70m a +70m) | Zoom: {self.zoom_size}m"
         )
         
         # Forzar una actualización final del lienzo para asegurar la visualización correcta
@@ -566,7 +566,7 @@ class OrthomosaicViewer(QDialog):
             if self.bearing is not None:
                 bearing_info = f", Bearing={self.bearing:.1f}°"
                 
-            status_text = f"Perfil {new_pk}: X={new_x_coord:.2f}, Y={new_y_coord:.2f}{bearing_info} | Ancho={self.profile_width}m (-40m a +40m)"
+            status_text = f"Perfil {new_pk}: X={new_x_coord:.2f}, Y={new_y_coord:.2f}{bearing_info} | Ancho={self.profile_width}m (-70m a +70m)"
             if hasattr(self, 'status_bar') and self.status_bar:
                 self.status_bar.showMessage(status_text)
             

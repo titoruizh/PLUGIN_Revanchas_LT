@@ -311,7 +311,7 @@ class RevanchasLTDialog(QtWidgets.QDialog, FORM_CLASS):
             # Update UI info
             self.profiles_info_label.setText(
                 f"✅ Perfiles generados: {len(self.profiles_data)}\n"
-                f"📏 Ancho de análisis: 80m\n"
+                f"📏 Ancho de análisis: 140m (Vista: ±40m, Max: ±70m)\n"
                 f"🎯 Rango: PK {alignment['start_pk']} hasta {alignment['end_pk']}\n"
                 f"🔧 Herramientas de medición disponibles"
             )

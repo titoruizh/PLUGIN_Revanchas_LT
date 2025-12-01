@@ -2,7 +2,7 @@
 import os
 from qgis.PyQt.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton, 
                                  QLabel, QSlider, QGroupBox, QMessageBox,
-                                 QFileDialog, QProgressDialog, QApplication)
+                                 QFileDialog, QProgressDialog, QApplication, QSpinBox)
 from qgis.PyQt.QtCore import Qt, QTimer
 from qgis.PyQt.QtGui import QFont
 from qgis.core import QgsApplication, QgsProject, QgsRasterLayer, QgsPointXY, QgsRectangle
@@ -116,6 +116,45 @@ class CustomNavigationToolbar(NavigationToolbar):
         
         self.addSeparator()
         
+        # 🆕 Controles de rango de visualización
+        self.addSeparator()
+        
+        # Label para rango
+        range_label = QLabel("  Rango (m):")
+        range_label.setStyleSheet("font-weight: bold; padding: 5px;")
+        self.addWidget(range_label)
+        
+        # SpinBox para límite izquierdo (negativo)
+        self.addWidget(QLabel(" Izq:"))
+        self.left_limit_spin = QSpinBox()
+        self.left_limit_spin.setMinimum(-70)
+        self.left_limit_spin.setMaximum(0)
+        self.left_limit_spin.setValue(-40)
+        self.left_limit_spin.setSuffix("m")
+        self.left_limit_spin.setToolTip("Límite izquierdo del perfil (-70 a 0)")
+        self.left_limit_spin.valueChanged.connect(self.on_range_changed)
+        self.addWidget(self.left_limit_spin)
+        
+        # SpinBox para límite derecho (positivo)
+        self.addWidget(QLabel(" Der:"))
+        self.right_limit_spin = QSpinBox()
+        self.right_limit_spin.setMinimum(0)
+        self.right_limit_spin.setMaximum(70)
+        self.right_limit_spin.setValue(40)
+        self.right_limit_spin.setSuffix("m")
+        self.right_limit_spin.setToolTip("Límite derecho del perfil (0 a 70)")
+        self.right_limit_spin.valueChanged.connect(self.on_range_changed)
+        self.addWidget(self.right_limit_spin)
+        
+        # Botón para aplicar rango
+        apply_range_btn = QPushButton("✓")
+        apply_range_btn.setMaximumWidth(30)
+        apply_range_btn.setToolTip("Aplicar rango personalizado")
+        apply_range_btn.clicked.connect(self.apply_custom_range)
+        self.addWidget(apply_range_btn)
+        
+        self.addSeparator()
+        
         # Add simple zoom level indicator (no coordinates)
         self.zoom_label = QLabel("Zoom: 100%")
         self.zoom_label.setStyleSheet("color: #333; font-weight: bold; padding: 5px;")
@@ -180,6 +219,38 @@ class CustomNavigationToolbar(NavigationToolbar):
         zoom_percentage = (full_width / current_width) * 100
         
         self.zoom_label.setText(f"Zoom: {zoom_percentage:.0f}%")
+    
+    def on_range_changed(self):
+        """Handler cuando cambian los spinboxes de rango"""
+        # Actualizar el tooltip del botón de extensión con el nuevo rango
+        left = self.left_limit_spin.value()
+        right = self.right_limit_spin.value()
+        # No hacer nada aquí, solo actualizar cuando se presione el botón
+    
+    def apply_custom_range(self):
+        """Aplicar el rango personalizado al perfil"""
+        left = self.left_limit_spin.value()
+        right = self.right_limit_spin.value()
+        
+        # Validar que el rango sea válido
+        if left >= right:
+            from qgis.PyQt.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self.profile_viewer,
+                "Rango Inválido",
+                f"El límite izquierdo ({left}m) debe ser menor que el derecho ({right}m)."
+            )
+            return
+        
+        # Actualizar el rango en el profile viewer
+        self.profile_viewer.custom_range_left = left
+        self.profile_viewer.custom_range_right = right
+        
+        # Refrescar la visualización con el nuevo rango
+        self.profile_viewer.update_profile_display()
+        
+        # Zoom a la extensión completa del nuevo rango
+        self.zoom_to_profile_extent()
 
 
 class InteractiveProfileViewer(QDialog):
@@ -207,6 +278,10 @@ class InteractiveProfileViewer(QDialog):
         self.auto_width_detection = True
         self.pretil_height_threshold = 0.5  # metros - diferencia mínima para detectar pretil
         self.search_step = 0.5  # metros - paso de búsqueda
+        
+        # 🆕 Custom range parameters (user-configurable)
+        self.custom_range_left = -40  # Default: -40m
+        self.custom_range_right = 40  # Default: +40m
         
         # Initialize key state BEFORE UI creation
         self._key_A_pressed = False
@@ -364,8 +439,8 @@ class InteractiveProfileViewer(QDialog):
         if not profile:
             profile = self.profiles_data[self.current_profile_index]
         
-        # CAMBIO: Usar el mismo rango -40 a +40 para todos los muros
-        return (-40, 40)  # Nuevo rango universal para todos los muros
+        # 🆕 USAR RANGO PERSONALIZADO del usuario
+        return (self.custom_range_left, self.custom_range_right)
 
     def detect_wall_name(self, profile):
         """Detecta el nombre del muro para mostrar en el título"""
@@ -481,6 +556,7 @@ class InteractiveProfileViewer(QDialog):
         if self.profiles_data:
             # 🆕 Initialize UI for default operation mode
             self.update_ui_for_operation_mode()
+            self.sync_range_controls()  # 🆕 Sync range controls on init
             self.update_profile_display()
             # Set initial zoom to full extent
             self.toolbar.zoom_to_profile_extent()
@@ -1455,6 +1531,7 @@ class InteractiveProfileViewer(QDialog):
             self.current_profile_index -= 1
             self.pk_slider.setValue(self.current_profile_index)
             self.load_profile_measurements()  # Load measurements for new PK
+            self.sync_range_controls()  # 🆕 Sync range spinboxes
             self.update_profile_display()
             # 🆕 Actualizar visualizador de ortomosaico si está abierto
             self.update_orthomosaic_view()
@@ -1465,6 +1542,7 @@ class InteractiveProfileViewer(QDialog):
             self.current_profile_index += 1
             self.pk_slider.setValue(self.current_profile_index)
             self.load_profile_measurements()  # Load measurements for new PK
+            self.sync_range_controls()  # 🆕 Sync range spinboxes
             self.update_profile_display()
             # 🆕 Actualizar visualizador de ortomosaico si está abierto
             self.update_orthomosaic_view()
@@ -1474,6 +1552,7 @@ class InteractiveProfileViewer(QDialog):
         if value != self.current_profile_index:
             self.current_profile_index = value
             self.load_profile_measurements()  # Load measurements for new PK
+            self.sync_range_controls()  # 🆕 Sync range spinboxes
             self.update_profile_display()
             # 🆕 Actualizar visualizador de ortomosaico si está abierto
             self.update_orthomosaic_view()
@@ -1490,6 +1569,28 @@ class InteractiveProfileViewer(QDialog):
                 
             except Exception as e:
                 print(f"Error al actualizar ortomosaico: {str(e)}")
+    
+    def sync_range_controls(self):
+        """🆕 Sincroniza los spinboxes de rango con los valores actuales"""
+        if hasattr(self, 'toolbar') and hasattr(self.toolbar, 'left_limit_spin'):
+            # Bloquear señales temporalmente para evitar bucles
+            self.toolbar.left_limit_spin.blockSignals(True)
+            self.toolbar.right_limit_spin.blockSignals(True)
+            
+            # Actualizar valores
+            self.toolbar.left_limit_spin.setValue(int(self.custom_range_left))
+            self.toolbar.right_limit_spin.setValue(int(self.custom_range_right))
+            
+            # Desbloquear señales
+            self.toolbar.left_limit_spin.blockSignals(False)
+            self.toolbar.right_limit_spin.blockSignals(False)
+            
+            # Actualizar tooltip del botón de extensión
+            zoom_extent_actions = [a for a in self.toolbar.actions() if "Extensión" in a.text()]
+            if zoom_extent_actions:
+                zoom_extent_actions[0].setToolTip(
+                    f"Vista completa del perfil ({self.custom_range_left}m a {self.custom_range_right}m)"
+                )
     
     def sync_measurements_to_orthomosaic(self):
         """🆕 Sincroniza las mediciones actuales al ortomosaico"""
@@ -1729,12 +1830,20 @@ class InteractiveProfileViewer(QDialog):
         distances = profile.get('distances', [])
         elevations = profile.get('elevations', [])
         
-        # Filter valid data
-        valid_data = [(d, e) for d, e in zip(distances, elevations) if e != -9999]
+        # 🔧 CRITICAL FIX: Filter data to display range FIRST
+        # This ensures we only plot what's visible and prevents "empty" appearance
+        print(f"📊 DEBUG - Total points: {len(distances)}, Range: {x_min} to {x_max}")
+        
+        # Filter valid data within the display range
+        valid_data = [(d, e) for d, e in zip(distances, elevations) 
+                      if e != -9999 and x_min <= d <= x_max]
+        
+        print(f"📊 DEBUG - Points in range: {len(valid_data)}")
         
         if not valid_data:
-            self.ax.text(0.5, 0.5, 'No hay datos válidos', 
+            self.ax.text(0.5, 0.5, f'No hay datos válidos en el rango {x_min}m a {x_max}m', 
                         ha='center', va='center', transform=self.ax.transAxes)
+            self.canvas.draw()
             return
         
         valid_distances, valid_elevations = zip(*valid_data)
@@ -1892,12 +2001,12 @@ class InteractiveProfileViewer(QDialog):
         self.ax.set_title(f'Perfil Topográfico - {current_pk}', fontsize=14, fontweight='bold')
         self.ax.legend(loc='upper right', fontsize=9)
         
-        # 🎯 Focus on relevant area (-40 to +20)
+        # 🎯 Focus on relevant area with custom range
         self.ax.set_xlim(x_min, x_max)
         
         if valid_elevations:
-            # Filter elevations within the display range for better Y scaling
-            relevant_elevations = [e for d, e in valid_data if x_min <= d <= x_max]
+            # valid_data already filtered to display range, so use all elevations
+            relevant_elevations = list(valid_elevations)
             
             # 🆕 Include reference elevations in Y-axis scaling based on mode
             reference_elevation = None
@@ -1942,12 +2051,8 @@ class InteractiveProfileViewer(QDialog):
         self.info_coords.setText(f"Coordenadas: X={profile.get('centerline_x', 0):.1f}, Y={profile.get('centerline_y', 0):.1f}")
         
         if valid_elevations:
-            # Show elevation range for the visible area only
-            relevant_elevations = [e for d, e in valid_data if -40 <= d <= 20]
-            if relevant_elevations:
-                self.info_elevation_range.setText(f"Rango elevación: {min(relevant_elevations):.2f} - {max(relevant_elevations):.2f} m")
-            else:
-                self.info_elevation_range.setText(f"Rango elevación: {min(valid_elevations):.2f} - {max(valid_elevations):.2f} m")
+            # valid_data already filtered, so use all elevations for range
+            self.info_elevation_range.setText(f"Rango elevación: {min(valid_elevations):.2f} - {max(valid_elevations):.2f} m")
         
         # Update info with LAMA info (single value, not range)
         lama_points = profile.get('lama_points', [])
@@ -1962,7 +2067,8 @@ class InteractiveProfileViewer(QDialog):
             manual_lama = self.saved_measurements[current_pk]['lama']
             lama_info = f"LAMA: {manual_lama['y']:.2f}m (manual)"
         
-        visible_points = len([d for d, e in valid_data if -40 <= d <= 20])
+        # valid_data already filtered to range, so count all
+        visible_points = len(valid_data)
         
         # 🆕 Add reference lines info based on operation mode
         ref_info = ""

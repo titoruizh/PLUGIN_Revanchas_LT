@@ -326,13 +326,13 @@ class AlignmentData:
         
         return closest_station
     
-    def get_cross_section_points(self, station, width=80.0, resolution=1.0):
+    def get_cross_section_points(self, station, width=140.0, resolution=1.0):
         """
         🔧 IMPROVED: Generate cross-section points perpendicular to alignment with proper curve handling
         
         Args:
             station: Station data dict
-            width: Total width of cross-section (default 80m)
+            width: Total width of cross-section (default 140m = ±70m)
             resolution: Distance between points in meters (default 1.0m)
             
         Returns:
@@ -362,7 +362,7 @@ class AlignmentData:
         
         # Generate points with specified resolution
         points = []
-        num_points = int(width / resolution) + 1  # e.g., 81 points for 1m resolution over 80m
+        num_points = int(width / resolution) + 1  # e.g., 1401 points for 0.1m resolution over 140m
         
         for i in range(num_points):
             # Distance from center with specified resolution
