@@ -2,9 +2,9 @@
 import os
 from qgis.PyQt.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton, 
                                  QLabel, QSlider, QGroupBox, QMessageBox,
-                                 QFileDialog, QProgressDialog, QApplication, QSpinBox)
+                                 QFileDialog, QProgressDialog, QApplication, QSpinBox, QShortcut)
 from qgis.PyQt.QtCore import Qt, QTimer
-from qgis.PyQt.QtGui import QFont
+from qgis.PyQt.QtGui import QFont, QKeySequence
 from qgis.core import QgsApplication, QgsProject, QgsRasterLayer, QgsPointXY, QgsRectangle
 
 def diagnose_libraries():
@@ -330,6 +330,15 @@ class InteractiveProfileViewer(QDialog):
         self.canvas.setFocusPolicy(Qt.StrongFocus)
         self.canvas.mpl_connect('key_press_event', self.on_key_press)
         self.canvas.mpl_connect('key_release_event', self.on_key_release)
+        
+        # Add global shortcuts for measurement buttons (Z, X, C)
+        self.shortcut_lama = QShortcut(QKeySequence("Z"), self)
+        self.shortcut_crown = QShortcut(QKeySequence("X"), self)
+        self.shortcut_width = QShortcut(QKeySequence("C"), self)
+        
+        self.shortcut_lama.activated.connect(lambda: self.lama_btn.click())
+        self.shortcut_crown.activated.connect(lambda: self.crown_btn.click())
+        self.shortcut_width.activated.connect(lambda: self.width_btn.click())
         
         # Ensure canvas gets focus immediately
         self.canvas.setFocus()
@@ -664,9 +673,9 @@ class InteractiveProfileViewer(QDialog):
         # Measurement mode buttons (PRIMERA FILA)
         btn_layout1 = QHBoxLayout()
         
-        self.crown_btn = QPushButton("📍 Cota Coronamiento")
-        self.width_btn = QPushButton("📏 Medir Ancho")
-        self.lama_btn = QPushButton("🟡 Modificar LAMA")
+        self.lama_btn = QPushButton("🟡 Modificar LAMA (Z)")
+        self.crown_btn = QPushButton("📍 Cota Coronamiento (X)")
+        self.width_btn = QPushButton("📏 Medir Ancho (C)")
         self.clear_btn = QPushButton("🗑️ Limpiar")
         
         self.crown_btn.setCheckable(True)
@@ -678,9 +687,9 @@ class InteractiveProfileViewer(QDialog):
         self.lama_btn.clicked.connect(lambda: self.set_measurement_mode('lama'))
         self.clear_btn.clicked.connect(self.clear_current_measurements)
         
+        btn_layout1.addWidget(self.lama_btn)
         btn_layout1.addWidget(self.crown_btn)
         btn_layout1.addWidget(self.width_btn)
-        btn_layout1.addWidget(self.lama_btn)
         btn_layout1.addWidget(self.clear_btn)
         
         # Auto-detection toggle (SEGUNDA FILA)
