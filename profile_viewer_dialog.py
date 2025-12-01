@@ -155,6 +155,16 @@ class CustomNavigationToolbar(NavigationToolbar):
         
         self.addSeparator()
         
+        # 🆕 Botón para activar/desactivar leyenda
+        self.legend_btn = QPushButton("📋 Leyenda")
+        self.legend_btn.setCheckable(True)
+        self.legend_btn.setChecked(False)  # Desactivada por defecto
+        self.legend_btn.setToolTip("Activar/Desactivar leyenda")
+        self.legend_btn.clicked.connect(self.toggle_legend)
+        self.addWidget(self.legend_btn)
+        
+        self.addSeparator()
+        
         # Add simple zoom level indicator (no coordinates)
         self.zoom_label = QLabel("Zoom: 100%")
         self.zoom_label.setStyleSheet("color: #333; font-weight: bold; padding: 5px;")
@@ -234,19 +244,21 @@ class CustomNavigationToolbar(NavigationToolbar):
         
         # Validar que el rango sea válido
         if left >= right:
-            from qgis.PyQt.QtWidgets import QMessageBox
-            QMessageBox.warning(
-                self.profile_viewer,
-                "Rango Inválido",
-                f"El límite izquierdo ({left}m) debe ser menor que el derecho ({right}m)."
-            )
+            QMessageBox.warning(self, "Rango inválido", 
+                              "El límite izquierdo debe ser menor que el derecho")
             return
         
-        # Actualizar el rango en el profile viewer
+        # Actualizar el rango personalizado en el profile_viewer
         self.profile_viewer.custom_range_left = left
         self.profile_viewer.custom_range_right = right
         
-        # Refrescar la visualización con el nuevo rango
+        # Redibujar el perfil con el nuevo rango
+        self.profile_viewer.update_profile_display()
+    
+    def toggle_legend(self):
+        """Activar/desactivar la visualización de la leyenda"""
+        self.profile_viewer.show_legend = self.legend_btn.isChecked()
+        self.profile_viewer.update_profile_display()
         self.profile_viewer.update_profile_display()
         
         # Zoom a la extensión completa del nuevo rango
@@ -282,6 +294,9 @@ class InteractiveProfileViewer(QDialog):
         # 🆕 Custom range parameters (user-configurable)
         self.custom_range_left = -40  # Default: -40m
         self.custom_range_right = 40  # Default: +40m
+        
+        # 🆕 Legend visibility control (desactivada por defecto)
+        self.show_legend = False
         
         # Initialize key state BEFORE UI creation
         self._key_A_pressed = False
@@ -2008,7 +2023,15 @@ class InteractiveProfileViewer(QDialog):
         self.ax.set_xlabel('Distancia desde Eje (m)', fontsize=12)
         self.ax.set_ylabel('Elevación (m)', fontsize=12)
         self.ax.set_title(f'Perfil Topográfico - {current_pk}', fontsize=14, fontweight='bold')
-        self.ax.legend(loc='upper right', fontsize=9)
+        
+        # 🆕 Mostrar leyenda solo si está activada
+        if self.show_legend:
+            self.ax.legend(loc='upper right', fontsize=9)
+        else:
+            # Remover leyenda si existe
+            legend = self.ax.get_legend()
+            if legend:
+                legend.remove()
         
         # 🎯 Focus on relevant area with custom range
         self.ax.set_xlim(x_min, x_max)
