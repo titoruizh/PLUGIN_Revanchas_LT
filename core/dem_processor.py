@@ -8,10 +8,30 @@ import os
 
 try:
     import numpy as np
-    HAS_NUMPY = True
+    # Test if numpy is working properly (handles _ARRAY_API issues)
+    try:
+        # Test basic functionality
+        test_array = np.array([1, 2, 3])
+        # Test if _ARRAY_API access causes problems (this is the main issue)
+        try:
+            _ = hasattr(np, '_ARRAY_API')  # This line can trigger the error
+        except AttributeError as ae:
+            if '_ARRAY_API' in str(ae):
+                print(f"⚠️ NumPy _ARRAY_API error detectado en DEM processor: {ae}")
+                raise ae
+        HAS_NUMPY = True
+        print("✅ NumPy funcionando correctamente en DEM processor")
+    except (AttributeError, ImportError, Exception) as e:
+        print(f"⚠️ NumPy disponible but con problemas en DEM processor: {e}")
+        HAS_NUMPY = False
+        # Set np to None to force fallback
+        np = None
 except ImportError:
     HAS_NUMPY = False
-    # Fallback for environments without numpy
+    np = None
+
+if not HAS_NUMPY:
+    # Fallback for environments without numpy or with problematic numpy
     class np:
         @staticmethod
         def array(data):

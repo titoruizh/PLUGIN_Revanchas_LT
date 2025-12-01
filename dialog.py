@@ -349,11 +349,34 @@ class RevanchasLTDialog(QtWidgets.QDialog, FORM_CLASS):
                     f"Error técnico: {str(ie)}"
                 )
             except Exception as ve:
+                error_msg = str(ve)
+                
+                # Detect specific library compatibility issues
+                if "_ARRAY_API" in error_msg:
+                    specific_msg = (
+                        "🔧 PROBLEMA DE COMPATIBILIDAD DETECTADO:\n\n"
+                        "Error '_ARRAY_API not found' indica incompatibilidad entre versiones de NumPy y otras librerías.\n\n"
+                        "SOLUCIÓN RECOMENDADA:\n"
+                        "1. Actualice NumPy: pip install --upgrade numpy\n"
+                        "2. Reinicie QGIS después de la actualización\n\n"
+                        f"Error técnico: {error_msg}"
+                    )
+                elif "NavigationToolbar" in error_msg:
+                    specific_msg = (
+                        "🔧 PROBLEMA DE MATPLOTLIB DETECTADO:\n\n"
+                        "NavigationToolbar no está disponible, posible incompatibilidad de versión.\n\n"
+                        "SOLUCIÓN RECOMENDADA:\n"
+                        "1. Actualice Matplotlib: pip install --upgrade matplotlib\n"
+                        "2. Reinicie QGIS después de la actualización\n\n"
+                        f"Error técnico: {error_msg}"
+                    )
+                else:
+                    specific_msg = f"Error al abrir el visualizador interactivo:\n\n{error_msg}\n\n"
+                
                 QMessageBox.critical(
                     self,
                     "Error del Visualizador",
-                    f"Error al abrir el visualizador interactivo:\n\n{str(ve)}\n\n"
-                    f"Los perfiles se generaron correctamente, pero no se pudo mostrar la interfaz."
+                    f"{specific_msg}\nLos perfiles se generaron correctamente, pero no se pudo mostrar la interfaz."
                 )
             
         except Exception as e:

@@ -8,9 +8,27 @@ import math
 
 try:
     import numpy as np
-    HAS_NUMPY = True
+    # Test if numpy is working properly (handles _ARRAY_API issues)
+    try:
+        # Test basic functionality
+        test_array = np.array([1, 2, 3])
+        # Test if _ARRAY_API access causes problems (this is the main issue)
+        try:
+            _ = hasattr(np, '_ARRAY_API')  # This line can trigger the error
+        except AttributeError as ae:
+            if '_ARRAY_API' in str(ae):
+                print(f"⚠️ NumPy _ARRAY_API error detectado en profile generator: {ae}")
+                raise ae
+        HAS_NUMPY = True
+        print("✅ NumPy funcionando correctamente en profile generator")
+    except (AttributeError, ImportError, Exception) as e:
+        print(f"⚠️ NumPy disponible but con problemas en profile generator: {e}")
+        HAS_NUMPY = False
+        # Set np to None to force fallback
+        np = None
 except ImportError:
     HAS_NUMPY = False
+    np = None
 
 from .dem_processor import DEMProcessor
 from .alignment_data import AlignmentData

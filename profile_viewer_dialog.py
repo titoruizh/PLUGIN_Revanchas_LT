@@ -3,18 +3,82 @@ import os
 from qgis.PyQt.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton, 
                                  QLabel, QSlider, QGroupBox, QMessageBox,
                                  QFileDialog, QProgressDialog, QApplication)
-from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtCore import Qt, QTimer
 from qgis.PyQt.QtGui import QFont
 from qgis.core import QgsApplication, QgsProject, QgsRasterLayer, QgsPointXY, QgsRectangle
+
+def diagnose_libraries():
+    """Diagnose library versions for debugging compatibility issues"""
+    print("🔍 DIAGNÓSTICO DE LIBRERÍAS:")
+    
+    # Check NumPy
+    try:
+        import numpy as np
+        print(f"  ✅ NumPy version: {np.__version__}")
+        
+        # Test _ARRAY_API availability (this is what's causing the error)
+        try:
+            if hasattr(np, '_ARRAY_API'):
+                print(f"    ✅ _ARRAY_API disponible")
+            else:
+                print(f"    ⚠️ _ARRAY_API no encontrado")
+        except AttributeError as ae:
+            print(f"    ❌ Error accediendo _ARRAY_API: {ae}")
+        
+        # Test basic numpy functionality
+        try:
+            test_array = np.array([1, 2, 3])
+            print(f"    ✅ Funcionalidad básica de NumPy OK")
+        except Exception as ne:
+            print(f"    ❌ Error en funcionalidad básica de NumPy: {ne}")
+            
+    except Exception as e:
+        print(f"  ❌ NumPy error general: {e}")
+    
+    # Check Matplotlib
+    try:
+        import matplotlib
+        print(f"  ✅ Matplotlib version: {matplotlib.__version__}")
+    except Exception as e:
+        print(f"  ❌ Matplotlib error: {e}")
+    
+    # Check backend availability
+    try:
+        from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT
+        print(f"    ✅ NavigationToolbar2QT (qt5agg) disponible")
+    except Exception:
+        print(f"    ⚠️ NavigationToolbar2QT (qt5agg) no disponible")
+        try:
+            from matplotlib.backends.backend_qtagg import NavigationToolbar2QT
+            print(f"    ✅ NavigationToolbar2QT (qtagg) disponible")
+        except Exception:
+            print(f"    ❌ NavigationToolbar2QT no disponible en ningún backend")
 
 try:
     import matplotlib.pyplot as plt
     from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
     from matplotlib.figure import Figure
-    from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
+    
+    # Handle different versions of matplotlib NavigationToolbar
+    try:
+        from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
+    except ImportError:
+        try:
+            from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
+        except ImportError:
+            try:
+                from matplotlib.backends.backend_qt import NavigationToolbar2QT as NavigationToolbar
+            except ImportError:
+                # Fallback for very old versions
+                from matplotlib.backends.backend_qt5agg import NavigationToolbar2QTAgg as NavigationToolbar
+    
     HAS_MATPLOTLIB = True
 except ImportError:
     HAS_MATPLOTLIB = False
+    # Create dummy NavigationToolbar class
+    class NavigationToolbar:
+        def __init__(self, *args, **kwargs):
+            pass
 
 
 class CustomNavigationToolbar(NavigationToolbar):
@@ -123,6 +187,10 @@ class InteractiveProfileViewer(QDialog):
     
     def __init__(self, profiles_data, parent=None, ecw_file_path=None):
         super().__init__(parent)
+        
+        # Run diagnostic to help debug library issues
+        diagnose_libraries()
+        
         self.profiles_data = profiles_data
         self.current_profile_index = 0
         self.measurement_mode = None
@@ -153,19 +221,34 @@ class InteractiveProfileViewer(QDialog):
         self.setModal(True)
         self.resize(1200, 800)
         
+        # Verify matplotlib functionality before proceeding
+        matplotlib_working = False
         if HAS_MATPLOTLIB:
+            try:
+                # Test if NavigationToolbar is properly imported and functional
+                test_fig = Figure(figsize=(1, 1))
+                test_canvas = FigureCanvas(test_fig)
+                test_toolbar = NavigationToolbar(test_canvas, self)
+                matplotlib_working = True
+                print("✅ Matplotlib y NavigationToolbar funcionando correctamente")
+            except Exception as e:
+                print(f"⚠️ Error al inicializar matplotlib/NavigationToolbar: {e}")
+                matplotlib_working = False
+        
+        if matplotlib_working:
             self.init_ui()
             # Setup keyboard events AFTER UI is fully created
             self.setup_keyboard_events()
         else:
             self.init_no_matplotlib()
         
-        # AHORA es seguro acceder a self.canvas:
+        # AHORA es seguro acceder a self.canvas SOLO si matplotlib funciona:
         self._key_A_pressed = False
-        self.canvas.setFocusPolicy(Qt.StrongFocus)
-        self.canvas.setFocus()
-        self.canvas.mpl_connect('key_press_event', self.on_key_press)
-        self.canvas.mpl_connect('key_release_event', self.on_key_release)
+        if matplotlib_working and hasattr(self, 'canvas'):
+            self.canvas.setFocusPolicy(Qt.StrongFocus)
+            self.canvas.setFocus()
+            self.canvas.mpl_connect('key_press_event', self.on_key_press)
+            self.canvas.mpl_connect('key_release_event', self.on_key_release)
 
     def setup_keyboard_events(self):
         """Setup keyboard event handling after UI is created"""
@@ -297,6 +380,46 @@ class InteractiveProfileViewer(QDialog):
             elif 339816 <= x <= 340114 and 6333743 <= y <= 6334206:
                 return "Muro Este"
         return None
+    
+    def init_no_matplotlib(self):
+        """Initialize widget when matplotlib is not available or has problems"""
+        layout = QVBoxLayout()
+        
+        # Create informative message
+        message = QLabel()
+        message.setText(
+            "<h2>🚧 Error de Compatibilidad de Librerías</h2>"
+            "<p><b>Error detectado: AttributeError '_ARRAY_API not found'</b></p>"
+            "<p>Este error indica incompatibilidad entre versiones de NumPy y otras librerías.</p>"
+            "<p><b>Soluciones (en orden de recomendación):</b></p>"
+            "<ol>"
+            "<li><b>Actualizar NumPy:</b><br>"
+            "<code>pip install --upgrade numpy>=1.21.0</code></li>"
+            "<li><b>Reinstalar NumPy y Matplotlib:</b><br>"
+            "<code>pip uninstall numpy matplotlib</code><br>"
+            "<code>pip install numpy matplotlib</code></li>"
+            "<li><b>Para QGIS con conda:</b><br>"
+            "<code>conda update numpy matplotlib</code></li>"
+            "</ol>"
+            "<p><b>Nota:</b> Los perfiles se generaron correctamente. Solo la interfaz gráfica está afectada.</p>"
+            "<p><i>Esta ventana se cerrará automáticamente en 10 segundos.</i></p>"
+        )
+        message.setWordWrap(True)
+        message.setStyleSheet(
+            "QLabel { "
+            "padding: 20px; "
+            "background-color: #fff3cd; "
+            "border: 2px solid #ffeaa7; "
+            "border-radius: 10px; "
+            "color: #856404; "
+            "}"
+        )
+        
+        layout.addWidget(message)
+        self.setLayout(layout)
+        
+        # Auto-close after showing the message
+        QTimer.singleShot(10000, self.close)  # Close after 10 seconds
     
     def init_matplotlib(self):
         """Initialize matplotlib components with navigation toolbar"""

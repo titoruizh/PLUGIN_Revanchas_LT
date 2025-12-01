@@ -9,7 +9,14 @@ try:
     import matplotlib.patches as patches
     from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
     from matplotlib.figure import Figure
-    HAS_MATPLOTLIB = True
+    
+    # Test matplotlib functionality
+    try:
+        test_fig = Figure(figsize=(1, 1))
+        HAS_MATPLOTLIB = True
+    except (AttributeError, ImportError, Exception) as e:
+        print(f"⚠️ Matplotlib disponible but con problemas: {e}")
+        HAS_MATPLOTLIB = False
 except ImportError:
     HAS_MATPLOTLIB = False
     
