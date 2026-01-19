@@ -170,8 +170,9 @@ class CustomNavigationToolbar(NavigationToolbar):
         self.zoom_label.setStyleSheet("color: #333; font-weight: bold; padding: 5px;")
         self.addWidget(self.zoom_label)
         
-        # Connect to zoom events
-        self.profile_viewer.canvas.mpl_connect('xlim_changed', self.on_zoom_changed)
+        # Connect to zoom events - Compatible con matplotlib >= 3.5
+        # Usar ax.callbacks en lugar de canvas.mpl_connect para xlim_changed
+        self.profile_viewer.ax.callbacks.connect('xlim_changed', self.on_zoom_changed)
     
     def zoom_to_profile_extent(self):
         """Zoom to full profile extent with wall-specific ranges"""
