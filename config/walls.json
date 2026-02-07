@@ -1,0 +1,103 @@
+{
+    "version": "1.0",
+    "description": "Configuración de muros para plugin Revanchas LT",
+    "walls": {
+        "Muro 1": {
+            "display_name": "Muro Principal",
+            "description": "Alineación principal del Muro 1 - Las Tortolas",
+            "alignment_type": "straight",
+            "start_pk": "0+000",
+            "end_pk": "1+434",
+            "total_length": 1434.0,
+            "interval": 20.0,
+            "start_point": {
+                "x": 337997.913,
+                "y": 6334753.227,
+                "description": "UTM coordinate at PK 0+000"
+            },
+            "end_point": {
+                "x": 336688.230,
+                "y": 6334170.246,
+                "description": "UTM coordinate at PK 1+434"
+            },
+            "display_range": {
+                "left": -40,
+                "right": 40
+            },
+            "lama_file": "muro1_lama_points.csv"
+        },
+        "Muro 2": {
+            "display_name": "Muro Oeste",
+            "description": "Alineación Muro Oeste (curva real)",
+            "alignment_type": "curved",
+            "start_pk": "0+000",
+            "end_pk": "0+689.825",
+            "total_length": 689.825,
+            "interval": 20.0,
+            "stations_file": "muro2_stations.csv",
+            "display_range": {
+                "left": -40,
+                "right": 40
+            },
+            "lama_file": "muro2_lama_points.csv",
+            "notes": "Estaciones cargadas desde CSV con coordenadas y bearings específicos"
+        },
+        "Muro 3": {
+            "display_name": "Muro Este",
+            "description": "Alineación Muro Este - Recta",
+            "alignment_type": "straight",
+            "start_pk": "0+000",
+            "end_pk": "0+550.80",
+            "total_length": 550.80,
+            "interval": 20.0,
+            "start_point": {
+                "x": 340114.954,
+                "y": 6333743.678,
+                "description": "UTM coordinate at PK 0+000"
+            },
+            "end_point": {
+                "x": 339816.955,
+                "y": 6334206.922,
+                "description": "UTM end coordinate"
+            },
+            "display_range": {
+                "left": -40,
+                "right": 40
+            },
+            "lama_file": "muro3_lama_points.csv"
+        }
+    },
+    "profile_settings": {
+        "width": 140.0,
+        "resolution": 0.1,
+        "default_view_range": 40.0,
+        "max_view_range": 70.0
+    },
+    "dem_settings": {
+        "default_nodata": -9999.0,
+        "coverage_buffer": 50.0,
+        "supported_extensions": [".asc", ".tif", ".tiff"]
+    },
+    "visualization": {
+        "colors": {
+            "terrain": "#8B4513",
+            "terrain_fill": "#D2B48C",
+            "lama": "#FFD700",
+            "lama_line": "#FFA500",
+            "crown": "#00FF00",
+            "width_line": "#FF00FF",
+            "reference": "#0000FF",
+            "centerline": "#FF0000"
+        },
+        "marker_sizes": {
+            "small": 6,
+            "medium": 10,
+            "large": 14
+        },
+        "line_widths": {
+            "thin": 1.0,
+            "normal": 2.0,
+            "thick": 3.0
+        }
+    }
+}
