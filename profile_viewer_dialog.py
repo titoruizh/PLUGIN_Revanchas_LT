@@ -718,7 +718,7 @@ class InteractiveProfileViewer(QDialog):
         
         # BOTÓN DE EXPORTACIÓN (TERCERA FILA)
         btn_layout3 = QHBoxLayout()
-        self.export_btn = QPushButton("📊 Exportar Mediciones CSV")
+        self.export_btn = QPushButton("📊 Exportar Mediciones")
         self.export_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; padding: 8px;")
         self.export_btn.clicked.connect(self.export_measurements_to_csv)
         btn_layout3.addWidget(self.export_btn)
@@ -1255,7 +1255,14 @@ class InteractiveProfileViewer(QDialog):
                         'auto_detected': True
                     }
                     
-                    self.width_result.setText(f"Ancho auto-detectado: {width:.2f} m")
+                    # 🔴 ALERT: Check width < 15m (HTML Styling)
+                    width_str = f"{width:.2f}"
+                    if width < 15.0:
+                        width_str = f"<span style='color:red;'>{width_str}</span>"
+                    
+                    self.width_result.setText(f"Ancho auto-detectado: {width_str} m")
+                    self.width_result.setStyleSheet("") # Reset style
+                    
                     self.auto_status.setText("✅ Ancho detectado automáticamente")
                     self.auto_status.setStyleSheet("color: green; font-style: italic;")
                     
@@ -1293,15 +1300,24 @@ class InteractiveProfileViewer(QDialog):
                     'auto_detected': False
                 }
                 
-                self.width_result.setText(f"Ancho medido: {width:.2f} m (manual)")
+                self.current_width_points = []
+
+                # 🔴 ALERT: Check width < 15m (HTML Styling)
+                width_str = f"{width:.2f}"
+                if width < 15.0:
+                    width_str = f"<span style='color:red;'>{width_str}</span>"
+
+                self.width_result.setText(f"Ancho medido: {width_str} m (manual)")
+                self.width_result.setStyleSheet("") # Reset style
+                
                 self.auto_status.setText("✏️ Medición manual completada")
                 self.auto_status.setStyleSheet("color: blue; font-style: italic;")
                 
                 # 🆕 Sincronizar medición con ortomosaico
                 self.sync_measurements_to_orthomosaic()
                 
-                # Reset for next measurement
                 self.current_width_points = []
+
         
         elif self.measurement_mode == 'lama':
             # LAMA measurement on terrain
@@ -1386,7 +1402,14 @@ class InteractiveProfileViewer(QDialog):
                         'reference_elevation': reference_elevation
                     }
                     
-                    self.width_result.setText(f"Ancho Proyectado auto: {width:.2f} m")
+                    # 🔴 ALERT: Check width < 15m (HTML Styling)
+                    width_str = f"{width:.2f}"
+                    if width < 15.0:
+                        width_str = f"<span style='color:red;'>{width_str}</span>"
+                    
+                    self.width_result.setText(f"Ancho Proyectado auto: {width_str} m")
+                    self.width_result.setStyleSheet("") # Reset style
+                    
                     self.auto_status.setText("✅ Ancho proyectado detectado automáticamente")
                     self.auto_status.setStyleSheet("color: green; font-style: italic;")
                     
@@ -1466,7 +1489,16 @@ class InteractiveProfileViewer(QDialog):
                     'reference_elevation': lama_elevation
                 }
                 
-                self.width_result.setText(f"Ancho Proyectado: {width:.2f} m (manual)")
+                self.current_width_points = []
+
+                # 🔴 ALERT: Check width < 15m (HTML Styling)
+                width_str = f"{width:.2f}"
+                if width < 15.0:
+                    width_str = f"<span style='color:red;'>{width_str}</span>"
+                
+                self.width_result.setText(f"Ancho Proyectado: {width_str} m (manual)")
+                self.width_result.setStyleSheet("") # Reset style
+                
                 self.auto_status.setText("✏️ Medición manual completada")
                 self.auto_status.setStyleSheet("color: blue; font-style: italic;")
                 
@@ -1707,17 +1739,28 @@ class InteractiveProfileViewer(QDialog):
                 if 'width' in measurements:
                     width_data = measurements['width']
                     auto_detected = width_data.get('auto_detected', False)
+                    width_val = width_data['distance']
+                    
+                    # 🔴 ALERT: Check width < 15m (HTML Styling)
+                    width_str = f"{width_val:.2f}"
+                    if width_val < 15.0:
+                        width_str = f"<span style='color:red;'>{width_str}</span>"
                     
                     if auto_detected:
-                        self.width_result.setText(f"Ancho Proyectado: {width_data['distance']:.2f} m (auto)")
+                        self.width_result.setText(f"Ancho Proyectado: {width_str} m (auto)")
                         self.auto_status.setText("✅ Ancho proyectado calculado (+3m)")
                         self.auto_status.setStyleSheet("color: green; font-style: italic;")
                     else:
-                        self.width_result.setText(f"Ancho Proyectado: {width_data['distance']:.2f} m (manual)")
+                        self.width_result.setText(f"Ancho Proyectado: {width_str} m (manual)")
                         self.auto_status.setText("✏️ Medición manual")
                         self.auto_status.setStyleSheet("color: blue; font-style: italic;")
+                    
+                    # Reset stylesheet just in case
+                    self.width_result.setStyleSheet("")
+
                 else:
                     self.width_result.setText("Ancho Proyectado: --")
+                    self.width_result.setStyleSheet("")
                     self.auto_status.setText("Auto-detección activada" if self.auto_width_detection else "Modo manual activado")
                     self.auto_status.setStyleSheet("color: green; font-style: italic;" if self.auto_width_detection else "color: orange; font-style: italic;")
                     
@@ -1734,11 +1777,17 @@ class InteractiveProfileViewer(QDialog):
                 if 'width' in measurements:
                     width_data = measurements['width']
                     auto_detected = width_data.get('auto_detected', False)
+                    width_val = width_data['distance']
+                    
+                    # 🔴 ALERT: Check width < 15m (HTML Styling)
+                    width_str = f"{width_val:.2f}"
+                    if width_val < 15.0:
+                        width_str = f"<span style='color:red;'>{width_str}</span>"
                     
                     if auto_detected:
-                        self.width_result.setText(f"Ancho medido: {width_data['distance']:.2f} m (auto-detectado)")
+                        self.width_result.setText(f"Ancho medido: {width_str} m (auto-detectado)")
                     else:
-                        self.width_result.setText(f"Ancho medido: {width_data['distance']:.2f} m (manual)")
+                        self.width_result.setText(f"Ancho medido: {width_str} m (manual)")
                     
                     if auto_detected:
                         self.auto_status.setText("✅ Ancho detectado automáticamente")
@@ -1746,8 +1795,13 @@ class InteractiveProfileViewer(QDialog):
                     else:
                         self.auto_status.setText("✏️ Medición manual")
                         self.auto_status.setStyleSheet("color: blue; font-style: italic;")
+                    
+                    # Reset stylesheet just in case
+                    self.width_result.setStyleSheet("")
+
                 else:
                     self.width_result.setText("Ancho medido: --")
+                    self.width_result.setStyleSheet("")
                     self.auto_status.setText("Auto-detección activada" if self.auto_width_detection else "Modo manual activado")
                     self.auto_status.setStyleSheet("color: green; font-style: italic;" if self.auto_width_detection else "color: orange; font-style: italic;")
                     
@@ -1756,9 +1810,11 @@ class InteractiveProfileViewer(QDialog):
             if self.operation_mode == "ancho_proyectado":
                 self.crown_result.setText("Cota Lama: --")
                 self.width_result.setText("Ancho Proyectado: --")
+                self.width_result.setStyleSheet("")  # Reset style
             else:
                 self.crown_result.setText("Cota Coronamiento: --")
                 self.width_result.setText("Ancho medido: --")
+                self.width_result.setStyleSheet("")  # Reset style
                 
             self.auto_status.setText("Auto-detección activada" if self.auto_width_detection else "Modo manual activado")
             self.auto_status.setStyleSheet("color: green; font-style: italic;" if self.auto_width_detection else "color: orange; font-style: italic;")
@@ -1814,7 +1870,14 @@ class InteractiveProfileViewer(QDialog):
         # Calculate Revancha
         if crown_elevation is not None and lama_elevation is not None:
             revancha = crown_elevation - lama_elevation
-            self.revancha_result.setText(f"Revancha: {revancha:.2f} m")
+            
+            # 🔴 ALERT: Check Revancha < 3m (HTML Styling)
+            revancha_str = f"{revancha:.2f}"
+            if revancha < 3.0:
+                revancha_str = f"<span style='color:red;'>{revancha_str}</span>"
+            
+            self.revancha_result.setText(f"Revancha: {revancha_str} m")
+            self.revancha_result.setStyleSheet("") # Reset style
             
             # Update LAMA display
             self.lama_result.setText(f"Cota LAMA: {lama_elevation:.2f} m ({lama_source})")
@@ -1830,6 +1893,7 @@ class InteractiveProfileViewer(QDialog):
                 missing_parts.append("lama")
             
             self.revancha_result.setText(f"Revancha: -- (falta {', '.join(missing_parts)})")
+            self.revancha_result.setStyleSheet("")  # Reset style
             
             # Still show LAMA if available
             if lama_elevation is not None:
@@ -2133,9 +2197,10 @@ class InteractiveProfileViewer(QDialog):
         self.canvas.draw()
 
     def export_measurements_to_csv(self):
-        """Export all measurements from all profiles to CSV file"""
+        """Export all measurements from all profiles to CSV file and screenshots for alerts"""
         try:
             from qgis.PyQt.QtWidgets import QFileDialog, QMessageBox
+            import os
             
             # 🎯 NOMBRE DINÁMICO SEGÚN MODO
             mode_name = "ancho_proyectado" if self.operation_mode == "ancho_proyectado" else "revanchas"
@@ -2143,7 +2208,7 @@ class InteractiveProfileViewer(QDialog):
             
             file_path, _ = QFileDialog.getSaveFileName(
                 self,
-                f"Exportar Mediciones {mode_name.replace('_', ' ').title()}",
+                f"Exportar Mediciones", # Renamed from Exportar Mediciones CSV
                 default_filename,
                 "CSV files (*.csv);;All files (*.*)"
             )
@@ -2151,20 +2216,33 @@ class InteractiveProfileViewer(QDialog):
             if not file_path:
                 return  # Usuario canceló
             
+            # Crear carpeta de perfiles si no existe
+            profiles_dir = os.path.join(os.path.dirname(file_path), "Perfiles")
+            if not os.path.exists(profiles_dir):
+                try:
+                    os.makedirs(profiles_dir)
+                except Exception as e:
+                    print(f"Error creando carpeta Perfiles: {e}")
+            
             # Mostrar progreso
-            progress = QProgressDialog("Recopilando mediciones de todos los perfiles...", "Cancelar", 0, 100, self)
+            progress = QProgressDialog("Recopilando mediciones y generando pantallazos...", "Cancelar", 0, 100, self)
             progress.setWindowModality(Qt.WindowModal)
             progress.show()
             
             QApplication.processEvents()
+            
+            # Guardar el índice actual para restaurarlo al final
+            original_profile_index = self.current_profile_index
             
             # Recopilar datos de todos los perfiles
             export_data = []
             total_profiles = len(self.profiles_data)
             
             progress.setLabelText("Procesando mediciones...")
-            progress.setValue(10)
+            progress.setValue(0)
             QApplication.processEvents()
+            
+            screenshots_taken = 0
             
             for i, profile in enumerate(self.profiles_data):
                 pk = profile['pk']
@@ -2172,14 +2250,22 @@ class InteractiveProfileViewer(QDialog):
                 # Obtener mediciones guardadas
                 measurements = self.saved_measurements.get(pk, {})
                 
+                should_take_screenshot = False
+                
                 if self.operation_mode == "ancho_proyectado":
                     # Modo Ancho Proyectado: Solo PK y Ancho
+                    width_val = measurements.get('width', {}).get('distance', None)
                     row_data = {
                         'PK': pk,
-                        'Ancho_Proyectado': measurements.get('width', {}).get('distance', None)
+                        'Ancho_Proyectado': width_val
                     }
+                    
+                    # Check alert
+                    if width_val is not None and width_val < 15.0:
+                        should_take_screenshot = True
+                        
                 else:
-                    # Modo Revancha: Formato original
+                    # Modo Revancha
                     # Obtener datos automáticos (LAMA siempre disponible)
                     auto_lama_points = profile.get('lama_points', [])
                     auto_lama_elevation = auto_lama_points[0]['elevation'] if auto_lama_points else None
@@ -2213,58 +2299,87 @@ class InteractiveProfileViewer(QDialog):
                         'Lama': lama_elevation,
                         'Ancho': width_value
                     }
+                    
+                    # Check alerts
+                    if (revancha_value is not None and revancha_value < 3.0) or \
+                       (width_value is not None and width_value < 15.0):
+                        should_take_screenshot = True
                 
                 export_data.append(row_data)
                 
+                # 📸 GENERAR PANTALLAZO SI HAY ALERTA
+                if should_take_screenshot:
+                    try:
+                        # Cambiar al perfil
+                        self.current_profile_index = i
+                        self.update_profile_display()
+                        QApplication.processEvents() # Permitir redibujado de UI
+                        
+                        # Generar nombre de archivo
+                        safe_pk = str(pk).replace('.', '_')
+                        filename = f"Perfil_PK_{safe_pk}"
+                        if self.operation_mode == "revancha":
+                            if row_data.get('Revancha') is not None and row_data['Revancha'] < 3.0:
+                                filename += f"_Revancha_{row_data['Revancha']:.2f}"
+                        
+                        if width_val := (row_data.get('Ancho') or row_data.get('Ancho_Proyectado')):
+                            if width_val < 15.0:
+                                filename += f"_Ancho_{width_val:.2f}"
+                                
+                        filename += ".png"
+                        full_screenshot_path = os.path.join(profiles_dir, filename)
+                        
+                        # Guardar la figura actual
+                        self.figure.savefig(full_screenshot_path, dpi=100, bbox_inches='tight')
+                        screenshots_taken += 1
+                        
+                    except Exception as e:
+                        print(f"Error generando pantallazo para PK {pk}: {e}")
+                
                 # Actualizar progreso
-                progress_percent = 10 + int((i / total_profiles) * 70)
+                progress_percent = int((i / total_profiles) * 90)
                 progress.setValue(progress_percent)
                 QApplication.processEvents()
                 
                 if progress.wasCanceled():
-                    return
+                    break
+            
+            # Restaurar vista original
+            if self.current_profile_index != original_profile_index:
+                self.current_profile_index = original_profile_index
+                self.update_profile_display()
             
             # Escribir CSV
-            progress.setLabelText("Escribiendo archivo CSV...")
-            progress.setValue(85)
-            QApplication.processEvents()
-            
-            self.write_measurements_csv(file_path, export_data)
-            
-            progress.setValue(100)
-            progress.close()
-            
-            # Calcular estadísticas para mostrar al usuario
-            total_rows = len(export_data)
-            
-            if self.operation_mode == "ancho_proyectado":
-                rows_with_ancho = sum(1 for row in export_data if row['Ancho_Proyectado'] is not None)
+            if not progress.wasCanceled():
+                progress.setLabelText("Escribiendo archivo CSV...")
+                progress.setValue(95)
+                QApplication.processEvents()
                 
-                QMessageBox.information(
-                    self,
-                    "✅ Exportación Exitosa",
-                    f"Mediciones de Ancho Proyectado exportadas a:\n{file_path}\n\n"
-                    f"📊 Resumen:\n"
-                    f"• Total de perfiles: {total_rows}\n"
-                    f"• Con Ancho Proyectado: {rows_with_ancho}"
-                )
+                self.write_measurements_csv(file_path, export_data)
+                
+                progress.setValue(100)
+                progress.close()
+                
+                # Calcular estadísticas para mostrar al usuario
+                total_rows = len(export_data)
+                
+                msg = f"Mediciones exportadas correctamente a:\n{file_path}\n"
+                
+                if screenshots_taken > 0:
+                    msg += f"\n📸 Se generaron {screenshots_taken} pantallazos de perfiles con alertas en:\n{profiles_dir}\n"
+                
+                msg += f"\n📊 Resumen:\n• Total de perfiles: {total_rows}\n"
+                
+                if self.operation_mode == "ancho_proyectado":
+                    rows_with_ancho = sum(1 for row in export_data if row['Ancho_Proyectado'] is not None)
+                    msg += f"• Con Ancho Proyectado: {rows_with_ancho}"
+                else:
+                    rows_with_revancha = sum(1 for row in export_data if row['Revancha'] is not None)
+                    msg += f"• Con Revancha: {rows_with_revancha}"
+                    
+                QMessageBox.information(self, "✅ Exportación Exitosa", msg)
             else:
-                rows_with_crown = sum(1 for row in export_data if row['Cota_Coronamiento'] is not None)
-                rows_with_width = sum(1 for row in export_data if row['Ancho'] is not None)
-                rows_with_lama = sum(1 for row in export_data if row['Lama'] is not None)
-                rows_with_revancha = sum(1 for row in export_data if row['Revancha'] is not None)
-                
-                QMessageBox.information(
-                    self,
-                    "✅ Exportación Exitosa",
-                    f"Mediciones exportadas correctamente a:\n{file_path}\n\n"
-                    f"📊 Resumen:\n"
-                    f"• Total de perfiles: {total_rows}\n"
-                    f"• Con Cota Coronamiento: {rows_with_crown}\n"
-                    f"• Con Ancho: {rows_with_width}\n"
-                    f"• Con LAMA: {rows_with_lama}\n"
-                    f"• Con Revancha: {rows_with_revancha}"
-                )
+                progress.close()
             
         except Exception as e:
             QMessageBox.critical(
