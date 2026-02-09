@@ -69,7 +69,8 @@ class ProfileGenerator:
                          alignment: Dict[str, Any], 
                          progress_callback: Optional[Callable[[float], None]] = None, 
                          resolution: float = DEFAULT_RESOLUTION, 
-                         wall_name: Optional[str] = None) -> List[Dict[str, Any]]:
+                         wall_name: Optional[str] = None,
+                         previous_dem_data: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """
         Genera todos los perfiles para una alineación.
         
@@ -78,7 +79,9 @@ class ProfileGenerator:
             alignment: Datos de alineación
             progress_callback: Función de callback para progreso (0.0-1.0)
             resolution: Resolución en metros
+            resolution: Resolución en metros
             wall_name: Nombre del muro para puntos LAMA
+            previous_dem_data: Datos del DEM anterior (referencia visual)
             
         Returns:
             Lista de perfiles generados
@@ -110,6 +113,9 @@ class ProfileGenerator:
                 wall_lama_points = []
         
         nodata = dem_data['header'].get('nodata_value', NODATA_VALUE)
+        prev_nodata = NODATA_VALUE
+        if previous_dem_data:
+            prev_nodata = previous_dem_data['header'].get('nodata_value', NODATA_VALUE)
         
         for i, station in enumerate(alignment['stations']):
             if progress_callback:
@@ -122,6 +128,7 @@ class ProfileGenerator:
             )
             
             elevations: List[float] = []
+            previous_elevations: List[float] = []  # 🆕
             distances: List[float] = []
             coordinates: List[Tuple[float, float]] = []
             
@@ -129,7 +136,13 @@ class ProfileGenerator:
                 x, y, offset = point
                 elevation = self.dem_processor.get_elevation_at_point(x, y, dem_data)
                 
+                # 🆕 Sample Previous DEM
+                prev_elevation = NODATA_VALUE
+                if previous_dem_data:
+                    prev_elevation = self.dem_processor.get_elevation_at_point(x, y, previous_dem_data)
+                
                 elevations.append(elevation)
+                previous_elevations.append(prev_elevation)
                 distances.append(offset)
                 coordinates.append((x, y))
             
@@ -142,6 +155,7 @@ class ProfileGenerator:
                 'bearing': station['bearing'],
                 'distances': distances,
                 'elevations': elevations,
+                'previous_elevations': previous_elevations if previous_dem_data else [],  # 🆕
                 'coordinates': coordinates,
                 'width': DEFAULT_PROFILE_WIDTH,
                 'resolution': resolution,

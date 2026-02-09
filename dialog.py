@@ -57,6 +57,7 @@ class RevanchasLTDialog(QtWidgets.QDialog, FORM_CLASS):
         self.wall_analyzer = WallAnalyzer()
         self.project_manager = ProjectManager()  # 🆕 Nuevo
         self.dem_file_path = None
+        self.previous_dem_file_path = None # 🆕 Previous DEM path
         self.ecw_file_path = None  # New: Store ECW file path
         self.profiles_data = None  # Store generated profiles
         self._cached_measurements = {}  # 🆕 Cache for measurements when viewer is closed
@@ -68,6 +69,9 @@ class RevanchasLTDialog(QtWidgets.QDialog, FORM_CLASS):
         
         # 🆕 Project Management buttons - Create and connect them dynamically
         self.setup_project_management_buttons()
+        
+        # 🆕 Previous DEM UI - Create dynamically
+        self.setup_previous_dem_ui()
         
         # Initially disable button that requires DEM
         self.generate_profiles_button.setEnabled(False)
@@ -246,6 +250,43 @@ class RevanchasLTDialog(QtWidgets.QDialog, FORM_CLASS):
             self.generate_profiles_button.setEnabled(True)
         else:
             self.generate_profiles_button.setEnabled(False)
+
+    def setup_previous_dem_ui(self):
+        """🆕 Create Previous DEM selection UI dynamically"""
+        # Find the layout where DEM button is located (moved from ECW)
+        if hasattr(self, 'browse_dem_button'):
+            parent_widget = self.browse_dem_button.parent()
+            parent_layout = parent_widget.layout()
+            
+            if parent_layout:
+                # Create widgets
+                self.browse_prev_dem_button = QtWidgets.QPushButton("📂 Seleccionar DEM Anterior (Ref)")
+                self.browse_prev_dem_button.setToolTip("Cargar un DEM antiguo para comparación visual (Requerido para Reporte PDF)")
+                self.browse_prev_dem_button.clicked.connect(self.browse_previous_dem_file)
+                
+                self.prev_dem_path_label = QtWidgets.QLabel("DEM Ant: No seleccionado (Opcional para visualización, Requerido para Reporte)")
+                self.prev_dem_path_label.setStyleSheet("color: gray; font-style: italic;")
+                
+                # Add to layout
+                # Try to add to the same layout as DEM button
+                if isinstance(parent_layout, QtWidgets.QVBoxLayout) or isinstance(parent_layout, QtWidgets.QGridLayout):
+                     parent_layout.addWidget(self.browse_prev_dem_button)
+                     parent_layout.addWidget(self.prev_dem_path_label)
+
+    def browse_previous_dem_file(self):
+        """🆕 Browse for Previous DEM file"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Seleccionar DEM Anterior (Referencia)",
+            "",
+            "ASCII Grid files (*.asc);;All files (*)"
+        )
+        
+        if file_path:
+            self.previous_dem_file_path = file_path
+            self.prev_dem_path_label.setText(f"DEM Ant: {os.path.basename(file_path)}")
+            self.prev_dem_path_label.setStyleSheet("color: green;")
+
     
     def generate_and_visualize_profiles(self):
         """🚀 UNIFIED METHOD: Generate profiles and launch interactive viewer"""
@@ -282,6 +323,20 @@ class RevanchasLTDialog(QtWidgets.QDialog, FORM_CLASS):
             
             dem_data = self.dem_processor.load_dem(self.dem_file_path)
             
+            # 🆕 Load Previous DEM if selected
+            prev_dem_data = None
+            if self.previous_dem_file_path:
+                progress.setLabelText("Cargando DEM Anterior...")
+                progress.setValue(15)
+                QgsApplication.processEvents()
+                try:
+                    prev_dem_data = self.dem_processor.load_dem(self.previous_dem_file_path)
+                    print("✅ DEM Anterior cargado correctamente")
+                except Exception as e:
+                    print(f"⚠️ Error cargando DEM Anterior: {e}")
+                    # Continue without it
+            
+            
             # Get alignment data
             progress.setLabelText("Obteniendo datos de alineación...")
             progress.setValue(20)
@@ -301,7 +356,8 @@ class RevanchasLTDialog(QtWidgets.QDialog, FORM_CLASS):
                     progress.setValue(30 + int(p * 0.5)),
                     QgsApplication.processEvents()
                 ),
-                wall_name=self.selected_wall 
+                wall_name=self.selected_wall,
+                previous_dem_data=prev_dem_data  # 🆕 Pass previous DEM data
             )
             
             progress.setValue(85)

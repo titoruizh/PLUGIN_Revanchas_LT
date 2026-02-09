@@ -4,8 +4,11 @@ from qgis.PyQt.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
                                  QLabel, QSlider, QGroupBox, QMessageBox,
                                  QFileDialog, QProgressDialog, QApplication, QSpinBox, QShortcut)
 from qgis.PyQt.QtCore import Qt, QTimer
+from qgis.PyQt.QtXml import QDomDocument
 from qgis.PyQt.QtGui import QFont, QKeySequence
-from qgis.core import QgsApplication, QgsProject, QgsRasterLayer, QgsPointXY, QgsRectangle
+from qgis.core import (QgsApplication, QgsProject, QgsRasterLayer, QgsPointXY, QgsRectangle,
+                       QgsPrintLayout, QgsLayoutExporter, QgsLayoutItemHtml, 
+                       QgsLayoutItemPicture, QgsLayoutSize, QgsUnitTypes, QgsLayoutPoint, QgsReadWriteContext)
 
 def diagnose_libraries():
     """Diagnose library versions for debugging compatibility issues"""
@@ -722,6 +725,19 @@ class InteractiveProfileViewer(QDialog):
         self.export_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; padding: 8px;")
         self.export_btn.clicked.connect(self.export_measurements_to_csv)
         btn_layout3.addWidget(self.export_btn)
+        
+        self.export_pdf_btn = QPushButton("📄 Generar Reporte PDF")
+        self.export_pdf_btn.setStyleSheet("background-color: #d32f2f; color: white; font-weight: bold; padding: 8px;")
+        self.export_pdf_btn.clicked.connect(self.export_pdf_report)
+        self.export_pdf_btn.clicked.connect(self.export_pdf_report)
+        btn_layout3.addWidget(self.export_pdf_btn)
+        
+        # 🆕 BOTÓN DE DESARROLLO (SOLO PARA DEV)
+        self.dev_map_btn = QPushButton("🛠️ Generar Mapa (Dev)")
+        self.dev_map_btn.setStyleSheet("background-color: #607D8B; color: white; border: 1px dashed white;")
+        self.dev_map_btn.setToolTip("Generar solo la imagen del mapa para pruebas")
+        self.dev_map_btn.clicked.connect(self.generate_dev_map)
+        btn_layout3.addWidget(self.dev_map_btn)
         
         # Measurement results
         self.crown_result = QLabel("Cota Coronamiento: --")
@@ -1903,7 +1919,7 @@ class InteractiveProfileViewer(QDialog):
             
             return None
     
-    def update_profile_display(self):
+    def update_profile_display(self, export_mode=False):
         """Update the profile visualization including LAMA points and reference lines"""
         if not self.profiles_data:
             return
@@ -1937,6 +1953,18 @@ class InteractiveProfileViewer(QDialog):
         
         valid_distances, valid_elevations = zip(*valid_data)
         
+        # 🆕 Plot Previous Terrain (Background)
+        previous_elevations = profile.get('previous_elevations', [])
+        if previous_elevations and len(previous_elevations) == len(distances):
+            # Filter valid previous data
+            valid_prev_data = [(d, pe) for d, pe in zip(distances, previous_elevations) 
+                             if pe != -9999 and x_min <= d <= x_max]
+            
+            if valid_prev_data:
+                prev_d, prev_e = zip(*valid_prev_data)
+                self.ax.plot(prev_d, prev_e, '--', color='gray', linewidth=1.0, 
+                           alpha=0.6, label='Terreno Anterior', zorder=0)
+
         # 🎨 Plot the profile with FINER LINE and MORE DETAIL
         self.ax.plot(valid_distances, valid_elevations, 'b-', linewidth=1.2,
                     label='Terreno Natural', alpha=0.9)
@@ -2022,7 +2050,7 @@ class InteractiveProfileViewer(QDialog):
                     p1, p2 = width_data['p1'], width_data['p2']
                     auto_detected = width_data.get('auto_detected', False)
                     
-                    color = 'lime' if auto_detected else 'magenta'
+                    color = 'lime' if (auto_detected or export_mode) else 'magenta'
                     marker_size = 10 if auto_detected else 8
                     line_style = '-' if auto_detected else '--'
                     label_prefix = 'Auto' if auto_detected else 'Manual'
@@ -2043,7 +2071,7 @@ class InteractiveProfileViewer(QDialog):
                     p1, p2 = width_data['p1'], width_data['p2']
                     auto_detected = width_data.get('auto_detected', False)
                     
-                    color = 'lime' if auto_detected else 'magenta'
+                    color = 'lime' if (auto_detected or export_mode) else 'magenta'
                     marker_size = 10 if auto_detected else 8
                     line_style = '-' if auto_detected else '--'
                     label_prefix = 'Auto' if auto_detected else 'Manual'
@@ -2090,8 +2118,64 @@ class InteractiveProfileViewer(QDialog):
         self.ax.set_title(f'Perfil Topográfico - {current_pk}', fontsize=14, fontweight='bold')
         
         # 🆕 Mostrar leyenda solo si está activada
-        if self.show_legend:
+        if self.show_legend and not export_mode:
             self.ax.legend(loc='upper right', fontsize=9)
+        elif export_mode:
+            # 📸 LEYENDA DETALLADA PARA PANTALLAZOS
+            from matplotlib.lines import Line2D
+            custom_handles = []
+            
+            # 1. Cota Coronamiento / Lama
+            crown_val = None
+            if self.operation_mode == "ancho_proyectado":
+                if current_pk in self.saved_measurements and 'lama_selected' in self.saved_measurements[current_pk]:
+                    crown_val = self.saved_measurements[current_pk]['lama_selected']['y']
+                    custom_handles.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='yellow', 
+                                              markersize=10, label=f'Lama: {crown_val:.2f}m'))
+            else:
+                 if current_pk in self.saved_measurements and 'crown' in self.saved_measurements[current_pk]:
+                    crown_val = self.saved_measurements[current_pk]['crown']['y']
+                    custom_handles.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='darkgreen', 
+                                              markersize=10, label=f'Cota Coronamiento: {crown_val:.2f}m'))
+
+            # 2. LAMA (solo revancha)
+            lama_val = None
+            if self.operation_mode == "revancha":
+                if current_pk in self.saved_measurements and 'lama' in self.saved_measurements[current_pk]:
+                    lama_val = self.saved_measurements[current_pk]['lama']['y']
+                elif 'lama_points' in profile and profile['lama_points']:
+                    lama_val = profile['lama_points'][0]['elevation']
+                
+                if lama_val is not None:
+                     custom_handles.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='yellow', 
+                                              markersize=10, markeredgecolor='brown', label=f'LAMA: {lama_val:.2f}m'))
+
+            # 3. Revancha
+            if crown_val is not None and lama_val is not None:
+                revancha = crown_val - lama_val
+                
+                # Formato con color rojo si es menor a 3m
+                if revancha < 3.0:
+                    label_text = r"Revancha: $\mathdefault{\color{red}{" + f"{revancha:.2f}" + r"}}$ m"
+                else:
+                    label_text = f"Revancha: {revancha:.2f}m"
+                    
+                custom_handles.append(Line2D([0], [0], color='none', label=label_text))
+
+            # 4. Ancho
+            width_val = None
+            if current_pk in self.saved_measurements and 'width' in self.saved_measurements[current_pk]:
+                width_val = self.saved_measurements[current_pk]['width']['distance']
+                
+                # Formato con color rojo si es menor a 15m
+                if width_val < 15.0:
+                    label_text = r"Ancho: $\mathdefault{\color{red}{" + f"{width_val:.2f}" + r"}}$ m"
+                else:
+                    label_text = f"Ancho: {width_val:.2f}m"
+                    
+                custom_handles.append(Line2D([0], [0], color='lime', linewidth=2, label=label_text))
+            
+            self.ax.legend(handles=custom_handles, loc='upper right', framealpha=0.9, fontsize=10)
         else:
             # Remover leyenda si existe
             legend = self.ax.get_legend()
@@ -2312,7 +2396,7 @@ class InteractiveProfileViewer(QDialog):
                     try:
                         # Cambiar al perfil
                         self.current_profile_index = i
-                        self.update_profile_display()
+                        self.update_profile_display(export_mode=True)
                         QApplication.processEvents() # Permitir redibujado de UI
                         
                         # Generar nombre de archivo
@@ -2642,5 +2726,586 @@ class InteractiveProfileViewer(QDialog):
             
         except Exception as e:
             print(f"❌ Error al restaurar mediciones: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
+    def parse_pk(self, pk_str):
+        """Helper to convert PK string (e.g., '0+100') to float"""
+        try:
+            if '+' in pk_str:
+                parts = pk_str.split('+')
+                return float(parts[0]) * 1000 + float(parts[1])
+            return float(pk_str)
+        except:
+            return 0.0
+
+    def generate_longitudinal_chart(self, output_path):
+        """Generate longitudinal profile chart (Crown & Lama) and save as image"""
+        try:
+            # 1. Extract and sort data
+            data_points = []
+            
+            for pk, measurements in self.saved_measurements.items():
+                # Crown
+                crown_y = None
+                if 'crown' in measurements:
+                    crown_y = measurements['crown']['y']
+                elif 'lama_selected' in measurements and self.operation_mode == "ancho_proyectado":
+                    # In Ancho Mode, "Crown" concept might be the reference lama
+                    # But user asked for trends. Let's stick to what we have.
+                    pass
+                
+                # Lama
+                lama_y = None
+                if 'lama' in measurements:
+                    lama_y = measurements['lama']['y']
+                elif 'lama_selected' in measurements:
+                     lama_y = measurements['lama_selected']['y']
+                else: 
+                     # Try to find auto lama from profile data
+                     for p in self.profiles_data:
+                         if str(p.get('pk')) == str(pk) or str(p.get('PK')) == str(pk):
+                             if p.get('lama_points'):
+                                 lama_y = p['lama_points'][0]['elevation']
+                             break
+                
+                pk_float = self.parse_pk(str(pk))
+                    
+                data_points.append({
+                    'pk_str': str(pk),
+                    'pk_val': pk_float,
+                    'crown': crown_y,
+                    'lama': lama_y
+                })
+            
+            # Sort by PK
+            data_points.sort(key=lambda x: x['pk_val'])
+            
+            if not data_points:
+                return False
+                
+            # 2. Prepare plot data
+            # Filter for plotting lines (avoid gaps if desired, or keep them)
+            # We want connected lines, so we filter valid points for each series INDEPENDENTLY
+            
+            valid_crowns = [(d['pk_val'], d['crown']) for d in data_points if d['crown'] is not None]
+            valid_lamas = [(d['pk_val'], d['lama']) for d in data_points if d['lama'] is not None]
+
+            # 3. Create Figure
+            fig = Figure(figsize=(20, 8), dpi=100)
+            ax = fig.add_subplot(111)
+            
+            # Plot Crown (Red)
+            if valid_crowns:
+                vx, vy = zip(*valid_crowns)
+                ax.plot(vx, vy, 'o-', color='red', linewidth=2, markersize=6, label='Coronamiento')
+                
+            # Plot Lama (Green)
+            if valid_lamas:
+                vx, vy = zip(*valid_lamas)
+                ax.plot(vx, vy, 'o-', color='green', linewidth=2, markersize=6, label='Lama')
+                
+            # Styling
+            ax.set_title("Perfil Longitudinal (Tendencia)", fontsize=16, fontweight='bold', pad=20)
+            ax.set_xlabel("PK (Progresiva)", fontsize=12)
+            ax.set_ylabel("Elevación (m)", fontsize=12)
+            ax.grid(True, which='both', linestyle='--', alpha=0.7)
+            ax.minorticks_on()
+            ax.grid(which='minor', linestyle=':', alpha=0.3)
+            ax.legend(loc='best', fontsize=12)
+            
+            # X Ticks formatting
+            # If standard PKs, just use auto. If special strings, might need custom
+            # For now let matplotlib handle numeric X axis
+            
+            # Tight layout
+            fig.tight_layout()
+            
+            # Save
+            fig.savefig(output_path)
+            return True
+            
+        except Exception as e:
+            print(f"Error generating longitudinal chart: {e}")
+            return False
+
+    def generate_detail_html_table(self):
+        """Generate HTML for Table 1: Detailed Measurements"""
+        
+        # CSS Style (Blue Header)
+        style = """
+        <style>
+            table { border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; font-size: 10px; }
+            th { background-color: #2b579a; color: white; padding: 6px; border: 1px solid #ddd; text-align: left; }
+            td { padding: 5px; border: 1px solid #ddd; text-align: left; }
+            tr:nth-child(even) { background-color: #f8f9fa; }
+            .alert { color: red; font-weight: bold; }
+            .geomembrane-col { background-color: #f0f0f0; color: #555; } /* Placeholder visual cue? Optional */
+        </style>
+        """
+        
+        html = [style, "<table>"]
+        
+        # Headers
+        headers = ["Sector", "PK", "Coronamiento", "Revancha", "Lama", "Ancho", "Geomembrana", "Dist. G-L", "Dist. G-C"]
+        html.append("<thead><tr>")
+        for h in headers:
+            html.append(f"<th>{h}</th>")
+        html.append("</tr></thead>")
+        
+        html.append("<tbody>")
+        
+        # Data Rows (Sorted by PK)
+        # We assume self.profiles_data contains all PKs, we merge with saved measurements
+        sorted_profiles = sorted(self.profiles_data, key=lambda x: self.parse_pk(str(x.get('pk', '0'))))
+        
+        for profile in sorted_profiles:
+            pk = str(profile.get('pk', ''))
+            measurements = self.saved_measurements.get(pk, {})
+            
+            # 1. Values
+            crown_val = measurements.get('crown', {}).get('y')
+            lama_val = measurements.get('lama', {}).get('y')
+            # Auto lama fallback
+            if lama_val is None and profile.get('lama_points'):
+                lama_val = profile['lama_points'][0]['elevation']
+                
+            revancha_val = None
+            if crown_val is not None and lama_val is not None:
+                revancha_val = crown_val - lama_val
+                
+            width_val = measurements.get('width', {}).get('distance')
+            
+            # Geomembrane placeholders
+            geomembrane_val = 0.00
+            dist_gl_val = 0.00
+            dist_gc_val = 0.00
+            
+            # 2. Formatting & Alerts
+            sector_txt = "Sector 1" # Default
+            pk_txt = pk
+            
+            coronamiento_txt = f"{crown_val:.3f}" if crown_val is not None else "-"
+            
+            revancha_cls = "alert" if (revancha_val is not None and revancha_val < 3.0) else ""
+            revancha_txt = f"{revancha_val:.3f}" if revancha_val is not None else "-"
+            if revancha_cls: revancha_txt = f"<span class='{revancha_cls}'>{revancha_txt}</span>"
+            
+            lama_txt = f"{lama_val:.3f}" if lama_val is not None else "-"
+            
+            ancho_cls = "alert" if (width_val is not None and width_val < 15.0) else ""
+            ancho_txt = f"{width_val:.3f}" if width_val is not None else "-"
+            if ancho_cls: ancho_txt = f"<span class='{ancho_cls}'>{ancho_txt}</span>"
+            
+            # Placeholders
+            geo_txt = "0.000"
+            dgl_txt = "0.000"
+            dgc_txt = "0.000"
+            
+            # Row Construction
+            html.append(f"<tr>")
+            html.append(f"<td>{sector_txt}</td>")
+            html.append(f"<td>{pk_txt}</td>")
+            html.append(f"<td>{coronamiento_txt}</td>")
+            html.append(f"<td>{revancha_txt}</td>")
+            html.append(f"<td>{lama_txt}</td>")
+            html.append(f"<td>{ancho_txt}</td>")
+            html.append(f"<td>{geo_txt}</td>")
+            html.append(f"<td>{dgl_txt}</td>")
+            html.append(f"<td>{dgc_txt}</td>")
+            html.append(f"</tr>")
+            
+        html.append("</tbody></table>")
+        return "".join(html)
+
+    def generate_summary_html_table(self):
+        """Generate HTML for Table 2: Summary Measurements"""
+        
+        # Structure to hold aggregated data
+        # Since we only have "Sector 1", we just calculate min/max for all data
+        # If we had multiple sectors, we'd dict Key=Sector -> values
+        
+        # Find Min/Max
+        min_rev, max_rev = (None, None), (None, None) # (Value, PK)
+        min_ancho, max_ancho = (None, None), (None, None)
+        min_crown, max_crown = (None, None), (None, None)
+        
+        for profile in self.profiles_data:
+            pk = str(profile.get('pk', ''))
+            measurements = self.saved_measurements.get(pk, {})
+            
+            # Revancha
+            crown_val = measurements.get('crown', {}).get('y')
+            lama_val = measurements.get('lama', {}).get('y')
+            if lama_val is None and profile.get('lama_points'):
+                lama_val = profile['lama_points'][0]['elevation']
+            
+            revancha_val = None
+            if crown_val is not None and lama_val is not None:
+                revancha_val = crown_val - lama_val
+                
+                # Check Min
+                if min_rev[0] is None or revancha_val < min_rev[0]:
+                    min_rev = (revancha_val, pk)
+                # Check Max
+                if max_rev[0] is None or revancha_val > max_rev[0]:
+                    max_rev = (revancha_val, pk)
+            
+            # Ancho
+            width_val = measurements.get('width', {}).get('distance')
+            if width_val is not None:
+                if min_ancho[0] is None or width_val < min_ancho[0]:
+                    min_ancho = (width_val, pk)
+                if max_ancho[0] is None or width_val > max_ancho[0]:
+                    max_ancho = (width_val, pk)
+                    
+            # Crown
+            if crown_val is not None:
+                if min_crown[0] is None or crown_val < min_crown[0]:
+                    min_crown = (crown_val, pk)
+                if max_crown[0] is None or crown_val > max_crown[0]:
+                    max_crown = (crown_val, pk)
+                    
+        # Construct HTML
+        style = """
+        <style>
+            .summary-table { border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; font-size: 10px; margin-top: 20px; }
+            .summary-table th { background-color: #1a428a; color: white; padding: 8px; border: 1px solid #ddd; text-align: center; }
+            .summary-table td { padding: 8px; border: 1px solid #ddd; text-align: center; }
+            .summary-table tr:nth-child(even) { background-color: #f8f9fa; }
+            .sub-header { background-color: #2b579a; font-size: 9px; }
+            .sector-col { font-weight: bold; color: #2b579a; }
+        </style>
+        """
+        
+        html = [style, "<table class='summary-table'>"]
+        
+        # Main Headers
+        html.append("<thead>")
+        html.append("<tr>")
+        html.append("<th rowspan='2' style='vertical-align: middle;'>SECTOR</th>")
+        html.append("<th colspan='2'>REVANCHA</th>")
+        html.append("<th colspan='2'>ANCHO</th>")
+        html.append("<th colspan='2'>CORONAMIENTO</th>")
+        html.append("</tr>")
+        
+        # Sub Headers
+        html.append("<tr class='sub-header'>")
+        for _ in range(3): # Repeated 3 times
+            html.append("<th>MIN (PK)</th>")
+            html.append("<th>MAX (PK)</th>")
+        html.append("</tr>")
+        html.append("</thead>")
+        
+        html.append("<tbody>")
+        
+        # Data Row (Sector 1)
+        def fmt(val_tuple):
+            val, pk = val_tuple
+            if val is None: return "-"
+            return f"{val:.3f} ({pk})"
+            
+        html.append("<tr>")
+        html.append("<td class='sector-col'>Sector 1</td>")
+        
+        html.append(f"<td>{fmt(min_rev)}</td>")
+        html.append(f"<td>{fmt(max_rev)}</td>")
+        
+        html.append(f"<td>{fmt(min_ancho)}</td>")
+        html.append(f"<td>{fmt(max_ancho)}</td>")
+        
+        html.append(f"<td>{fmt(min_crown)}</td>")
+        html.append(f"<td>{fmt(max_crown)}</td>")
+        
+        html.append("</tr>")
+        html.append("</tbody></table>")
+        
+        return "".join(html)
+
+    def export_pdf_report(self):
+        """Generate PDF report using QPT Template and Dynamic Screenshots"""
+        try:
+            # 1. Validation: Check if Previous DEM is loaded
+            has_previous_dem = False
+            if self.profiles_data and len(self.profiles_data) > 0:
+                # Check first profile for previous elevations
+                if 'previous_elevations' in self.profiles_data[0] and self.profiles_data[0]['previous_elevations']:
+                    has_previous_dem = True
+            
+            if not has_previous_dem:
+                QMessageBox.warning(
+                    self, 
+                    "Requisito Faltante", 
+                    "⚠️ Para generar el Reporte PDF, es OBLIGATORIO haber cargado un 'DEM Anterior'.\n\n"
+                    "El reporte requiere comparar el terreno actual con el anterior.\n"
+                    "Por favor, cargue un DEM de referencia en la pantalla principal y vuelva a generar los perfiles."
+                )
+                return
+
+            # 2. Ask for output file
+            filename, _ = QFileDialog.getSaveFileName(self, "Guardar Reporte PDF", "Reporte_Mediciones.pdf", "PDF Files (*.pdf)")
+            if not filename:
+                return
+
+            # 3. Generate Assets (Chart & Tables)
+            import tempfile
+            temp_dir = tempfile.gettempdir()
+            chart_path = os.path.join(temp_dir, "temp_profile_chart.png")
+            
+            if not self.generate_longitudinal_chart(chart_path):
+                QMessageBox.warning(self, "Aviso", "No se pudo generar el gráfico longitudinal.")
+
+            html_detail = self.generate_detail_html_table()
+            html_summary = self.generate_summary_html_table()
+            
+            # 4. Load Template
+            project = QgsProject.instance()
+            layout = QgsPrintLayout(project)
+            layout.initializeDefaults()
+            
+            # Find template path
+            plugin_dir = os.path.dirname(__file__)
+            template_path = os.path.join(plugin_dir, 'report_template.qpt')
+            
+            if not os.path.exists(template_path):
+                # Create default if missing (fallback to simple code or error)
+                QMessageBox.critical(self, "Error", f"No se encontró la plantilla: {template_path}")
+                return
+            
+            with open(template_path, 'r', encoding='utf-8') as f:
+                template_content = f.read()
+                doc = QDomDocument()
+                doc.setContent(template_content)
+                layout.loadFromTemplate(doc, QgsReadWriteContext())
+            
+            # 5. Inject Content into Template Items
+            # Chart
+            chart_item = layout.itemById('chart')
+            if chart_item and isinstance(chart_item, QgsLayoutItemPicture):
+                chart_item.setPicturePath(chart_path)
+            
+            # Summary Table (Fix: Handle Frames for HTML)
+            summary_frame = layout.itemById('summary_table')
+            if summary_frame and isinstance(summary_frame, QgsLayoutFrame):
+                summary_mf = summary_frame.multiFrame()
+                if isinstance(summary_mf, QgsLayoutItemHtml):
+                    summary_mf.setHtml(html_summary)
+                    summary_mf.loadHtml()
+                
+            # Detail Table (Fix: Handle Frames for HTML)
+            detail_frame = layout.itemById('detail_table')
+            if detail_frame and isinstance(detail_frame, QgsLayoutFrame):
+                detail_mf = detail_frame.multiFrame()
+                if isinstance(detail_mf, QgsLayoutItemHtml):
+                    detail_mf.setHtml(html_detail)
+                    detail_mf.loadHtml()
+
+            # 6. Dynamic Screenshots (Pages 2+)
+            # Detect Alerts
+            alert_profiles = []
+            for profile in self.profiles_data:
+                pk = str(profile.get('pk', ''))
+                measurements = self.saved_measurements.get(pk, {})
+                
+                # Check Revancha < 3
+                crown_val = measurements.get('crown', {}).get('y')
+                lama_val = measurements.get('lama', {}).get('y')
+                # Auto lama fallback
+                if lama_val is None and profile.get('lama_points'):
+                    lama_val = profile['lama_points'][0]['elevation']
+                
+                revancha_alert = False
+                if crown_val is not None and lama_val is not None:
+                    if (crown_val - lama_val) < 3.0:
+                        revancha_alert = True
+                        
+                # Check Width < 15
+                width_val = measurements.get('width', {}).get('distance')
+                width_alert = False
+                if width_val is not None and width_val < 15.0:
+                    width_alert = True
+                    
+                if revancha_alert or width_alert:
+                    alert_profiles.append(pk)
+            
+            if alert_profiles:
+                # Add new pages for screenshots
+                # Grid settings
+                rows = 2
+                cols = 2
+                per_page = rows * cols
+                
+                # Current Y position tracking for new pages
+                # We need to extend the layout
+                # layout.pageCollection().extend(num_pages) matches existing page size
+                
+                import math
+                num_pages_needed = math.ceil(len(alert_profiles) / per_page)
+                
+                for i in range(num_pages_needed):
+                    page = layout.pageCollection().extend(1)[0] # Add 1 page
+                    
+                    # Add Title for this page (FIX: Use QgsLayoutFrame + QgsLayoutItemHtml)
+                    title_mf = QgsLayoutItemHtml(layout)
+                    title_mf.setHtml(f"<h2 style='font-family: Arial; color: #d32f2f;'>Perfiles con Alertas (Página {i+1})</h2>")
+                    layout.addMultiFrame(title_mf)
+                    
+                    title_frame = QgsLayoutFrame(layout, title_mf)
+                    title_frame.attemptResize(QgsLayoutSize(280, 15, QgsUnitTypes.LayoutMillimeters))
+                    
+                    # Calculate position: Page Height * (Original Pages + i) + Margin
+                    # Default A4 Height is 210mm. Template is page 0. Extent adds to end.
+                    # We need absolute position.
+                    # Note: 'page' object has pos().y() but it might be easier to calculate
+                    page_y_offset = (i + 1) * 297 # A4 Height is 297mm (Portrait) or 210mm (Landscape)?
+                    # Asssuming A4 Landscape (297x210) based on width usage?
+                    # Wait, QGIS layout coordinates are continuous.
+                    # The template page size dictates the interval.
+                    # Let's assume standard A4 Landscape (297mm width, 210mm height).
+                    page_height = layout.pageCollection().page(0).pageSize().height()
+                    page_y_offset = (i + 1) * page_height
+                    
+                    title_frame.attemptMove(QgsLayoutPoint(10, page_y_offset + 10, QgsUnitTypes.LayoutMillimeters))
+                    layout.addLayoutItem(title_frame)
+                    
+                    # Add Screenshots
+                    start_idx = i * per_page
+                    end_idx = min(start_idx + per_page, len(alert_profiles))
+                    
+                    page_profiles = alert_profiles[start_idx:end_idx]
+                    
+                    for idx, pk in enumerate(page_profiles):
+                        # Generate Screenshot
+                        # 1. Switch profile
+                        self.current_pk = pk
+                        # Find index
+                        for p_idx, p in enumerate(self.profiles_data):
+                            if str(p.get('pk')) == pk:
+                                self.current_profile_index = p_idx
+                                break
+                        self.update_profile_display()
+                        QApplication.processEvents() # Ensure redraw
+                        
+                        # 2. Save Image
+                        screenshot_path = os.path.join(temp_dir, f"alert_{pk.replace('+','_')}.png")
+                        self.figure.savefig(screenshot_path)
+                        
+                        # 3. Add to layout
+                        # Grid logic
+                        row = idx // cols
+                        col = idx % cols
+                        
+                        w = 130 # mm
+                        h = 80  # mm
+                        x = 10 + (col * 140)
+                        y = 30 + (row * 90) + page_y_offset
+                        
+                        pic = QgsLayoutItemPicture(layout)
+                        pic.setPicturePath(screenshot_path)
+                        pic.attemptResize(QgsLayoutSize(w, h, QgsUnitTypes.LayoutMillimeters))
+                        pic.attemptMove(QgsLayoutPoint(x, y, QgsUnitTypes.LayoutMillimeters))
+                        layout.addLayoutItem(pic)
+                        
+                        # Label (FIX: Use QgsLayoutFrame + QgsLayoutItemHtml)
+                        lbl_mf = QgsLayoutItemHtml(layout)
+                        lbl_mf.setHtml(f"<h3 style='font-family: Arial;'>PK: {pk}</h3>")
+                        layout.addMultiFrame(lbl_mf)
+                        
+                        lbl_frame = QgsLayoutFrame(layout, lbl_mf)
+                        lbl_frame.attemptResize(QgsLayoutSize(w, 10, QgsUnitTypes.LayoutMillimeters))
+                        lbl_frame.attemptMove(QgsLayoutPoint(x, y - 10, QgsUnitTypes.LayoutMillimeters))
+                        layout.addLayoutItem(lbl_frame)
+
+
+            # 7. Export
+            exporter = QgsLayoutExporter(layout)
+            result = exporter.exportToPdf(filename, QgsLayoutExporter.PdfExportSettings())
+            
+            if result == QgsLayoutExporter.Success:
+                QMessageBox.information(self, "Éxito", f"Reporte PDF generado correctamente en:\n{filename}")
+                try:
+                    os.startfile(filename)
+                except:
+                    pass
+            else:
+                QMessageBox.critical(self, "Error", "Fallo al exportar el PDF.")
+                
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(self, "Error", f"Error generando reporte: {str(e)}")
+
+    def generate_dev_map(self):
+        """🆕 Método DEV para probar generación de mapas rápidamente"""
+        from .core.map_generator import MapGenerator
+        
+        try:
+            # 1. Validar requisitos
+            if not self.ecw_file_path or not os.path.exists(self.ecw_file_path):
+                QMessageBox.warning(self, "Falta Ortomosaico", "Debe cargar un Ortomosaico (ECW/TIF) primero.")
+                return
+                
+            has_previous_dem = False
+            prev_dem_path = None
+            
+            # Recuperar path del DEM anterior desde el diálogo principal
+            main_dialog = self.parent()
+            if hasattr(main_dialog, 'previous_dem_file_path') and main_dialog.previous_dem_file_path:
+                prev_dem_path = main_dialog.previous_dem_file_path
+                has_previous_dem = True
+            
+            if not has_previous_dem:
+                QMessageBox.warning(self, "Falta DEM Anterior", "Debe cargar un DEM Anterior en la ventana principal.")
+                return
+                
+            # Current DEM Path
+            current_dem_path = None
+            if hasattr(main_dialog, 'dem_file_path') and main_dialog.dem_file_path:
+                current_dem_path = main_dialog.dem_file_path
+                
+            if not current_dem_path:
+                QMessageBox.warning(self, "Falta DEM Actual", "No se detectó el path del DEM actual.")
+                return
+                
+            # 2. Pedir destino
+            output_path, _ = QFileDialog.getSaveFileName(
+                self, "Guardar Mapa de Prueba", "Mapa_Contexto_Dev.png", "Images (*.png *.jpg)"
+            )
+            
+            if not output_path:
+                return
+                
+            # 3. Llamar al generador
+            plugin_dir = os.path.dirname(__file__)
+            generator = MapGenerator(plugin_dir)
+            
+            wall_name = "Muro 1" # Default fallback
+            if hasattr(main_dialog, 'selected_wall'):
+                wall_name = main_dialog.selected_wall
+            
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            
+            success = generator.generate_map_image(
+                wall_name,
+                self.ecw_file_path,
+                current_dem_path,
+                prev_dem_path,
+                output_path
+            )
+            
+            QApplication.restoreOverrideCursor()
+            
+            if success:
+                QMessageBox.information(self, "Éxito", f"Mapa generado en:\n{output_path}")
+                try:
+                    os.startfile(output_path)
+                except:
+                    pass
+            else:
+                QMessageBox.critical(self, "Error", "Falló la generación del mapa. Ver log/consola.")
+                
+        except Exception as e:
+            QApplication.restoreOverrideCursor()
+            QMessageBox.critical(self, "Error Crítico", str(e))
             import traceback
             traceback.print_exc()
