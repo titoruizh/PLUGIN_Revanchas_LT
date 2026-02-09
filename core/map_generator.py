@@ -14,7 +14,8 @@ from qgis.core import (
     QgsColorRampShader, QgsSingleBandPseudoColorRenderer,
     QgsRasterShader, QgsSingleSymbolRenderer, QgsSymbol,
     QgsSimpleFillSymbolLayer, QgsRasterBandStats,
-    QgsLayoutItemScaleBar, QgsLayoutItemLabel, QgsApplication
+    QgsLayoutItemScaleBar, QgsLayoutItemLabel, QgsApplication,
+    QgsLayoutMeasurement
 )
 from qgis.PyQt.QtGui import QColor, QFont
 from qgis.PyQt.QtCore import Qt
@@ -35,8 +36,8 @@ class MapGenerator:
     # Rotaciones por muro (clockwise, en grados)
     WALL_ROTATIONS = {
         "MP": 24.0,   # Muro Principal
-        "MO": 0.0,    # Muro Oeste (ajustar según necesidad)
-        "ME": 0.0     # Muro Este (ajustar según necesidad)
+        "MO": 87.0,   # Muro Oeste
+        "ME": 303.0   # Muro Este
     }
     
     def __init__(self, plugin_dir):
@@ -50,16 +51,42 @@ class MapGenerator:
         self.info_base_dir = os.path.join(plugin_dir, "INFO BASE REPORTE")
         
         logger.debug(f"MapGenerator inicializado. Info Base: {self.info_base_dir}")
+    
+    def _cleanup_temp_files(self, wall_code):
+        """Elimina archivos temporales del wall_code para evitar cache."""
+        import tempfile
+        import glob
+        
+        temp_dir = tempfile.gettempdir()
+        patterns = [
+            f"dem_diff_{wall_code}.*",
+            f"clipped_diff_{wall_code}.*",
+            f"mask_for_clip_{wall_code}.*",
+            f"polygon_mask_{wall_code}.*"
+        ]
+        
+        cleaned = 0
+        for pattern in patterns:
+            for file_path in glob.glob(os.path.join(temp_dir, pattern)):
+                try:
+                    os.remove(file_path)
+                    cleaned += 1
+                except Exception as e:
+                    pass  # Ignorar errores de limpieza
+        
+        if cleaned > 0:
+            print(f"🗑️ Limpiados {cleaned} archivos temporales de {wall_code}")
 
     def get_wall_code(self, wall_name):
         """Mapea nombre de muro a código de carpeta (MP/MO/ME)."""
-        if "Muro 1" in wall_name or "Principal" in wall_name:
+        wall_lower = wall_name.lower()
+        if "principal" in wall_lower or "muro 1" in wall_lower:
             return "MP"
-        elif "Muro 2" in wall_name or "Oeste" in wall_name:
+        elif "oeste" in wall_lower or "muro 2" in wall_lower:
             return "MO"
-        elif "Muro 3" in wall_name or "Este" in wall_name:
+        elif "este" in wall_lower or "muro 3" in wall_lower:
             return "ME"
-        return "MP" # Default
+        return "MP"  # Default
 
     def generate_map_image(self, 
                           wall_name, 
@@ -77,8 +104,11 @@ class MapGenerator:
             wall_code = self.get_wall_code(wall_name)
             rotation = self.WALL_ROTATIONS.get(wall_code, 0.0)
             
+            # CRÍTICO: Limpiar archivos temp del muro para evitar cache
+            self._cleanup_temp_files(wall_code)
+            
             # 1. Preparar Capas
-            # A. Cargar Ortomosaico (Base)
+            # A. Cargar Ortomosaico (Base) - USAR SU CRS COMO REFERENCIA
             if ortho_path and os.path.exists(ortho_path):
                 ortho_layer = QgsRasterLayer(ortho_path, "Ortomosaico")
                 if not ortho_layer.isValid():
@@ -87,6 +117,16 @@ class MapGenerator:
             else:
                 logger.warning("No se proporcionó ortomosaico")
                 return False
+            
+            # Obtener CRS de referencia (del ortomosaico o default UTM 19S)
+            reference_crs = ortho_layer.crs()
+            if not reference_crs.isValid():
+                # Default: UTM Zone 19S (Chile)
+                from qgis.core import QgsCoordinateReferenceSystem
+                reference_crs = QgsCoordinateReferenceSystem("EPSG:32719")
+                print(f"⚠️ Ortomosaico sin CRS, usando default: EPSG:32719")
+            else:
+                print(f"✅ CRS de referencia (ortomosaico): {reference_crs.authid()}")
                 
             # B. Cargar DXFs
             base_path = os.path.join(self.info_base_dir, wall_code)
@@ -109,16 +149,29 @@ class MapGenerator:
             # Cargar Sectores con estilo rojo
             sectors_layer = QgsVectorLayer(sectors_path, "Sectores", "ogr")
             if sectors_layer.isValid():
+                # Asignar CRS si no tiene
+                if not sectors_layer.crs().isValid():
+                    sectors_layer.setCrs(reference_crs)
                 self._style_sectors_layer(sectors_layer)
             
-            # C. Calcular Diferencia DEMs
-            diff_layer = self._calculate_dem_difference(current_dem_path, previous_dem_path)
+            # Cargar Perímetro para extent y visualización
+            perimeter_layer = QgsVectorLayer(perimeter_path, "Perimetro", "ogr")
+            if perimeter_layer.isValid():
+                if not perimeter_layer.crs().isValid():
+                    perimeter_layer.setCrs(reference_crs)
+                print(f"✅ Perímetro cargado: {perimeter_layer.featureCount()} features")
+                print(f"   Extent: {perimeter_layer.extent().toString()}")
+            else:
+                print(f"❌ ERROR: No se pudo cargar perímetro: {perimeter_path}")
+            
+            # C. Calcular Diferencia DEMs (pasando CRS y wall_code para temp files únicos)
+            diff_layer = self._calculate_dem_difference(current_dem_path, previous_dem_path, reference_crs, wall_code)
             if not diff_layer:
                 logger.error("Falló el cálculo de diferencia de DEMs")
                 return False
                 
             # D. Recortar Diferencia con Perímetro CUBETA
-            clipped_diff_layer = self._clip_raster_by_mask(diff_layer, perimeter_path)
+            clipped_diff_layer = self._clip_raster_by_mask(diff_layer, perimeter_path, reference_crs, wall_code)
             if not clipped_diff_layer:
                 clipped_diff_layer = diff_layer
             
@@ -134,44 +187,103 @@ class MapGenerator:
             page = layout.pageCollection().page(0)
             page.setPageSize(QgsLayoutSize(297, 150, QgsUnitTypes.LayoutMillimeters))  # Más corto
             
-            # Calcular extent para el mapa - usar sectores para enfocar el área de interés
-            extent = sectors_layer.extent()
-            extent.grow(extent.width() * 0.10)  # Buffer 10%
+            # Calcular extent para el mapa - usar SECTORES como base SIN margen
+            # Los sectores cubren el área de trabajo visible mejor que el perímetro
+            if sectors_layer and sectors_layer.isValid():
+                extent = sectors_layer.extent()
+                # Sin margen (1.0) - sectores ocupan 100% del frame (zoom máximo absoluto)
+                # No se aplica scale() - extent exacto de los sectores
+                extent_source = "sectores exactos (sin margen - 100% zoom)"
+            elif perimeter_layer and perimeter_layer.isValid():
+                extent = perimeter_layer.extent()
+                extent.scale(1.05)  # Margen mínimo para fallback
+                extent_source = "perímetro + 5% margen (fallback)"
+            else:
+                extent = ortho_layer.extent()
+                extent_source = "ortomosaico completo (fallback)"
+            
+            # DEBUG: Información detallada para diagnosticar problemas de extent
+            print(f"\n{'='*60}")
+            print(f"📊 DEBUG EXTENT para {wall_name} ({wall_code})")
+            print(f"{'='*60}")
+            print(f"Extent source: {extent_source}")
+            print(f"Ortho path: {ortho_path}")
+            print(f"Ortho CRS: {ortho_layer.crs().authid()}")
+            print(f"Ortho extent: {extent.toString()}")
+            print(f"Ortho size (px): {ortho_layer.width()} x {ortho_layer.height()}")
+            print(f"Extent width (m): {extent.width():.2f}")
+            print(f"Extent height (m): {extent.height():.2f}")
+            print(f"Extent aspect ratio: {extent.width()/extent.height():.3f}")
+            print(f"Rotation: {rotation}°")
+            print(f"Map item size (mm): 255 x 140")
+            print(f"Map item aspect ratio: {255/140:.3f}")
+            print(f"{'='*60}\n")
             
             # 3. Agregar Mapa Principal (con rotación) - Llenar toda la página
             map_item = QgsLayoutItemMap(layout)
-            map_item.attemptResize(QgsLayoutSize(255, 140, QgsUnitTypes.LayoutMillimeters))  # Ajustado a nueva altura
+            map_item.attemptResize(QgsLayoutSize(255, 140, QgsUnitTypes.LayoutMillimeters))
             map_item.attemptMove(QgsLayoutPoint(38, 5, QgsUnitTypes.LayoutMillimeters))
-            map_item.setLayers([sectors_layer, clipped_diff_layer, ortho_layer])
-            map_item.setExtent(extent)
-            map_item.setCrs(ortho_layer.crs())
             
-            # Aplicar rotación (positivo = clockwise en QGIS)
-            map_item.setMapRotation(rotation)
+            # *** FIX: Agregar capa raster recortada al proyecto temporalmente para renderizado ***
+            temp_layer_id = None
+            if clipped_diff_layer and clipped_diff_layer.isValid():
+                QgsProject.instance().addMapLayer(clipped_diff_layer)
+                temp_layer_id = clipped_diff_layer.id()
             
-            layout.addLayoutItem(map_item)
-            
-            # 4. Agregar Leyenda (Escala de Colores) - Lado izquierdo
-            self._add_color_legend(layout, min_val, max_val)
-            
-            # 5. Agregar Barra de Escala - Abajo
-            self._add_scale_bar(layout, map_item)
-            
-            # 6. Agregar Flecha Norte - Esquina superior derecha
-            self._add_north_arrow(layout, rotation)
-            
-            # 7. Exportar
-            exporter = QgsLayoutExporter(layout)
-            export_settings = QgsLayoutExporter.ImageExportSettings()
-            export_settings.dpi = 200
-            result = exporter.exportToImage(output_path, export_settings)
-            
-            if result == QgsLayoutExporter.Success:
-                logger.info(f"Mapa generado exitosamente en {output_path}")
-                return True
-            else:
-                logger.error(f"Error exportando imagen: {result}")
-                return False
+            try:
+                # Orden: Sectores (arriba), Raster (medio), Ortho (fondo)
+                layers_list = [sectors_layer, ortho_layer]
+                if clipped_diff_layer and clipped_diff_layer.isValid():
+                    layers_list.insert(1, clipped_diff_layer)
+                
+                map_item.setLayers(layers_list)
+                map_item.setCrs(reference_crs)
+                
+                print(f"📍 PASO 1 - Después de setLayers: {map_item.extent().toString()}")
+                
+                # IMPORTANTE: Para rotaciones cercanas a 90°, usar zoomToExtent
+                # que calcula correctamente el extent visible post-rotación
+                map_item.setMapRotation(rotation)
+                print(f"📍 PASO 2 - Después de setMapRotation({rotation}°): {map_item.extent().toString()}")
+                
+                # Usar zoomToExtent en vez de setExtent para mejor control
+                map_item.zoomToExtent(extent)
+                print(f"📍 PASO 3 - Después de zoomToExtent: {map_item.extent().toString()}")
+                
+                # Agregar al layout
+                layout.addLayoutItem(map_item)
+                print(f"📍 PASO 4 - Después de addLayoutItem: {map_item.extent().toString()}")
+                
+                # 4. Agregar Leyenda (Escala de Colores) - Lado izquierdo
+                self._add_color_legend(layout, min_val, max_val)
+                
+                # 5. Agregar Barra de Escala - Abajo
+                self._add_scale_bar(layout, map_item)
+                
+                # 6. Agregar Flecha Norte - Esquina superior derecha
+                self._add_north_arrow(layout, rotation)
+                
+                # 7. Agregar etiquetas de superficies DEM - Abajo a la derecha
+                self._add_dem_labels(layout, current_dem_path, previous_dem_path)
+                
+                # 8. Exportar
+                exporter = QgsLayoutExporter(layout)
+                export_settings = QgsLayoutExporter.ImageExportSettings()
+                export_settings.dpi = 200
+                result = exporter.exportToImage(output_path, export_settings)
+                
+                if result == QgsLayoutExporter.Success:
+                    try: logger.info(f"Mapa generado exitosamente en {output_path}")
+                    except: pass
+                    return True
+                else:
+                    try: logger.error(f"Error exportando imagen: {result}")
+                    except: pass
+                    return False
+            finally:
+                # Limpieza: Eliminar capa temporal del proyecto
+                if temp_layer_id:
+                    QgsProject.instance().removeMapLayer(temp_layer_id)
 
         except Exception as e:
             logger.error(f"Excepción en generación de mapa: {e}")
@@ -289,42 +401,157 @@ class MapGenerator:
         scale_bar.setUnitsPerSegment(125)  # 125m por segmento
         scale_bar.setUnitLabel("m")
         scale_bar.setFont(QFont("Arial", 8))
-        scale_bar.attemptMove(QgsLayoutPoint(175, 5, QgsUnitTypes.LayoutMillimeters))  # Arriba a la derecha
+        scale_bar.attemptMove(QgsLayoutPoint(167, 5, QgsUnitTypes.LayoutMillimeters))  # Ajustado a la izquierda
         scale_bar.attemptResize(QgsLayoutSize(80, 8, QgsUnitTypes.LayoutMillimeters))
         layout.addLayoutItem(scale_bar)
 
     def _add_north_arrow(self, layout, map_rotation):
-        """Agregar flecha norte en esquina superior derecha"""
-        # Crear etiqueta con símbolo de flecha
+        """Agregar flecha norte con fondo naranja claro y borde negro"""
+        from qgis.core import QgsLayoutItemShape
+        
+        # Posición ajustada más a la derecha (antes: 245, ahora: 253)
+        x_pos = 253
+        y_pos = 10
+        width = 20
+        height = 30
+        
+        # Crear etiqueta con símbolo de flecha color naranja
         north_label = QgsLayoutItemLabel(layout)
         north_label.setText("▲\nN")
-        north_label.setFont(QFont("Arial", 24, QFont.Bold))
+        
+        # Fuente grande y negrita
+        font = QFont("Arial", 20, QFont.Bold)
+        north_label.setFont(font)
+        
+        # Color naranja para el texto/flecha
+        north_label.setFontColor(QColor(255, 140, 0))  # Naranja fuerte (DarkOrange)
+        
+        # Alineación centrada
         north_label.setHAlign(Qt.AlignCenter)
-        north_label.setVAlign(Qt.AlignTop)
-        north_label.attemptMove(QgsLayoutPoint(270, 10, QgsUnitTypes.LayoutMillimeters))
-        north_label.attemptResize(QgsLayoutSize(25, 35, QgsUnitTypes.LayoutMillimeters))
+        north_label.setVAlign(Qt.AlignVCenter)
+        
+        # Posición y tamaño
+        north_label.attemptMove(QgsLayoutPoint(x_pos, y_pos, QgsUnitTypes.LayoutMillimeters))
+        north_label.attemptResize(QgsLayoutSize(width, height, QgsUnitTypes.LayoutMillimeters))
+        
+        # Fondo blanco semitransparente para contraste (sin marco)
+        north_label.setBackgroundEnabled(True)
+        north_label.setBackgroundColor(QColor(255, 255, 255, 200))  # Blanco con 78% opacidad
+        north_label.setFrameEnabled(False)  # Sin marco para evitar cuadrado negro
         
         # Rotar la flecha para compensar la rotación del mapa
-        # (Si el mapa está rotado 24° CW, la flecha debe apuntar 24° CW del norte visual)
         north_label.setItemRotation(map_rotation)
         
         layout.addLayoutItem(north_label)
 
-    def _calculate_dem_difference(self, dem1_path, dem2_path):
-        """Calcula dem1 - dem2."""
+    def _add_dem_labels(self, layout, current_dem_path, previous_dem_path):
+        """Agregar etiquetas de superficies DEM abajo a la derecha"""
+        import os
+        
+        # Extraer nombres de archivo sin extensión y ruta
+        current_name = os.path.splitext(os.path.basename(current_dem_path))[0] if current_dem_path else "N/A"
+        previous_name = os.path.splitext(os.path.basename(previous_dem_path))[0] if previous_dem_path else "N/A"
+        
+        # Posición: abajo a la derecha del mapa
+        x_pos = 175  # Alineado con barra de escala
+        y_pos = 135  # Cerca del borde inferior (página tiene 150mm de alto)
+        
+        # Etiqueta 1: Superficie actual
+        label1 = QgsLayoutItemLabel(layout)
+        label1.setText(f"Superficie: {current_name}")
+        label1.setFont(QFont("Arial", 8))
+        label1.attemptMove(QgsLayoutPoint(x_pos, y_pos, QgsUnitTypes.LayoutMillimeters))
+        label1.attemptResize(QgsLayoutSize(115, 5, QgsUnitTypes.LayoutMillimeters))
+        label1.setHAlign(Qt.AlignLeft)
+        layout.addLayoutItem(label1)
+        
+        # Etiqueta 2: Superficie comparación
+        label2 = QgsLayoutItemLabel(layout)
+        label2.setText(f"Superficie comparación: {previous_name}")
+        label2.setFont(QFont("Arial", 8))
+        label2.attemptMove(QgsLayoutPoint(x_pos, y_pos + 5, QgsUnitTypes.LayoutMillimeters))
+        label2.attemptResize(QgsLayoutSize(115, 5, QgsUnitTypes.LayoutMillimeters))
+        label2.setHAlign(Qt.AlignLeft)
+        layout.addLayoutItem(label2)
+
+    def _calculate_dem_difference(self, dem1_path, dem2_path, reference_crs=None, wall_code=""):
+        """Calcula dem1 - dem2, preservando el CRS."""
         if not dem1_path or not dem2_path:
             return None
-            
+        
+        print(f"\n{'='*60}")
+        print(f"🔧 DEBUG: Calculando diferencia de DEMs para {wall_code}")
+        print(f"{'='*60}")
+        print(f"📁 DEM1 (actual): {dem1_path}")
+        print(f"📁 DEM2 (anterior): {dem2_path}")
+        if reference_crs:
+            print(f"📎 CRS de referencia: {reference_crs.authid()}")
+        
         dem1 = QgsRasterLayer(dem1_path, "DEM1")
         dem2 = QgsRasterLayer(dem2_path, "DEM2")
         
         if not dem1.isValid() or not dem2.isValid():
+            print(f"❌ ERROR: Uno de los DEMs es inválido")
+            print(f"   DEM1 válido: {dem1.isValid()}")
+            print(f"   DEM2 válido: {dem2.isValid()}")
             logger.error("Uno de los DEMs es inválido")
             return None
-            
-        import tempfile
-        output_diff = os.path.join(tempfile.gettempdir(), "temp_dem_diff.tif")
         
+        # Determinar CRS a usar: del DEM o del reference_crs
+        source_crs = dem1.crs()
+        if not source_crs.isValid() and reference_crs and reference_crs.isValid():
+            source_crs = reference_crs
+            print(f"⚠️ DEM sin CRS, usando CRS de referencia: {source_crs.authid()}")
+            # Asignar CRS a los DEMs
+            dem1.setCrs(source_crs)
+            dem2.setCrs(source_crs)
+        
+        print(f"✅ DEMs cargados:")
+        print(f"   DEM1 CRS: {dem1.crs().authid()}")
+        print(f"   DEM1 Extent: {dem1.extent().toString()}")
+        print(f"   DEM1 Size: {dem1.width()}x{dem1.height()}")
+        print(f"   DEM2 CRS: {dem2.crs().authid()}")
+        print(f"   CRS a usar: {source_crs.authid()}")
+        
+        import tempfile
+        # Usar nombres únicos por muro para evitar cacheo
+        output_diff = os.path.join(tempfile.gettempdir(), f"dem_diff_{wall_code}.tif")
+        print(f"📁 Output file: {output_diff}")
+        
+        # Usar GDAL para calcular la diferencia (preserva CRS mejor que QgsRasterCalculator)
+        try:
+            print(f"\n🔄 Usando gdal:rastercalculator...")
+            result = processing.run("gdal:rastercalculator", {
+                'INPUT_A': dem1_path,
+                'BAND_A': 1,
+                'INPUT_B': dem2_path,
+                'BAND_B': 1,
+                'FORMULA': 'A - B',
+                'NO_DATA': -9999,
+                'RTYPE': 5,  # Float32
+                'OUTPUT': output_diff
+            })
+            
+            if result and 'OUTPUT' in result and os.path.exists(result['OUTPUT']):
+                layer = QgsRasterLayer(result['OUTPUT'], "Difference")
+                if layer.isValid():
+                    # Verificar que el CRS se preservó
+                    print(f"✅ Diferencia calculada con GDAL")
+                    print(f"   Output CRS inicial: {layer.crs().authid()}")
+                    
+                    # Si el CRS no se preservó, asignarlo manualmente
+                    if not layer.crs().isValid() and source_crs.isValid():
+                        print(f"⚠️ Asignando CRS manualmente: {source_crs.authid()}")
+                        layer.setCrs(source_crs)
+                    
+                    print(f"   Final CRS: {layer.crs().authid()}")
+                    print(f"{'='*60}\n")
+                    return layer
+                    
+        except Exception as e:
+            print(f"⚠️ GDAL rastercalculator falló: {e}, intentando con QgsRasterCalculator...")
+        
+        # Fallback: QgsRasterCalculator
         from qgis.analysis import QgsRasterCalculator, QgsRasterCalculatorEntry
         
         entries = []
@@ -341,11 +568,13 @@ class MapGenerator:
         entry2.bandNumber = 1
         entries.append(entry2)
         
+        # Usar constructor con CRS
         calc = QgsRasterCalculator(
             'dem1@1 - dem2@1', 
             output_diff, 
             'GTiff',
             dem1.extent(), 
+            source_crs,  # Pasar CRS explícitamente
             dem1.width(), 
             dem1.height(), 
             entries
@@ -355,85 +584,298 @@ class MapGenerator:
         if result == 0:
             layer = QgsRasterLayer(output_diff, "Difference")
             if layer.isValid():
+                # Asegurar CRS
+                if not layer.crs().isValid() and source_crs.isValid():
+                    layer.setCrs(source_crs)
+                print(f"✅ Diferencia calculada con QgsRasterCalculator")
+                print(f"   CRS: {layer.crs().authid()}")
+                print(f"{'='*60}\n")
                 return layer
         
+        print(f"❌ Error en cálculo de diferencia: {result}")
         logger.error(f"Error en QgsRasterCalculator: {result}")
         return None
 
-    def _clip_raster_by_mask(self, raster_layer, mask_path):
+    def _clip_raster_by_mask(self, raster_layer, mask_path, reference_crs=None, wall_code=""):
         """Recorta raster usando una capa vectorial de máscara (DXF)."""
         import tempfile
         
-        output_path = os.path.join(tempfile.gettempdir(), "temp_clipped_diff.tif")
+        # Usar nombres únicos por muro para evitar cacheo
+        output_path = os.path.join(tempfile.gettempdir(), f"clipped_diff_{wall_code}.tif")
+        
+        print(f"\n{'='*60}")
+        print(f"🔧 DEBUG: Iniciando proceso de clipping para {wall_code}")
+        print(f"{'='*60}")
+        print(f"📁 Raster input: {raster_layer.source() if raster_layer else 'None'}")
+        print(f"📁 Máscara DXF: {mask_path}")
+        print(f"📁 Output path: {output_path}")
+        if reference_crs:
+            print(f"📎 CRS de referencia: {reference_crs.authid()}")
         
         if not os.path.exists(mask_path):
+            print(f"❌ ERROR: Máscara no existe: {mask_path}")
             logger.error(f"Máscara no existe: {mask_path}")
             return None
         
-        # Cargar DXF - puede ser líneas o polígonos
+        # Asegurar que el raster tiene CRS asignado
+        if not raster_layer.crs().isValid() and reference_crs and reference_crs.isValid():
+            print(f"⚠️ Raster sin CRS, asignando: {reference_crs.authid()}")
+            raster_layer.setCrs(reference_crs)
+        
+        # Cargar DXF
         dxf_layer = QgsVectorLayer(mask_path, "DXF_Mask", "ogr")
         
         if not dxf_layer.isValid():
+            print(f"❌ ERROR: No se pudo cargar DXF: {mask_path}")
             logger.error(f"No se pudo cargar DXF: {mask_path}")
             return raster_layer
+        
+        # Asignar CRS al DXF si no tiene
+        if not dxf_layer.crs().isValid() and reference_crs and reference_crs.isValid():
+            print(f"⚠️ DXF sin CRS, asignando: {reference_crs.authid()}")
+            dxf_layer.setCrs(reference_crs)
+        
+        print(f"✅ DXF cargado correctamente")
+        print(f"   - Features: {dxf_layer.featureCount()}")
+        print(f"   - CRS: {dxf_layer.crs().authid() if dxf_layer.crs().isValid() else 'NO DEFINIDO'}")
+        print(f"   - Extent: {dxf_layer.extent().toString()}")
         
         # Verificar tipo de geometría
         from qgis.core import QgsWkbTypes
         geom_type = dxf_layer.geometryType()
-        logger.info(f"DXF tipo geometría: {geom_type}")
+        geom_type_name = {0: 'Point', 1: 'Line', 2: 'Polygon', 3: 'Unknown', 4: 'Null'}
+        print(f"   - Tipo geometría: {geom_type} ({geom_type_name.get(geom_type, 'Unknown')})")
+        
+        # Debug: Mostrar información de cada feature
+        for i, feat in enumerate(dxf_layer.getFeatures()):
+            geom = feat.geometry()
+            if geom:
+                print(f"   - Feature {i}: WKB Type={geom.wkbType()}, Área={geom.area():.2f}, Perímetro={geom.length():.2f}")
+                if i >= 2:  # Solo mostrar primeras 3
+                    print(f"   - ... ({dxf_layer.featureCount()} features en total)")
+                    break
         
         mask_layer = dxf_layer
         
         # Si es línea, convertir a polígono
         if geom_type == QgsWkbTypes.LineGeometry:
-            logger.info("DXF es línea, convirtiendo a polígono...")
+            print(f"\n⚠️ DXF es LÍNEA, intentando convertir a polígono...")
             try:
-                # Usar qgis:linestopolygons para convertir
-                polygon_output = os.path.join(tempfile.gettempdir(), "temp_polygon_mask.gpkg")
+                # Usar nombre único por muro para evitar cacheo
+                polygon_output = os.path.join(tempfile.gettempdir(), f"polygon_mask_{wall_code}.gpkg")
+                print(f"   Output polígono: {polygon_output}")
+                
                 result = processing.run("qgis:linestopolygons", {
                     'INPUT': dxf_layer,
                     'OUTPUT': polygon_output
                 })
+                
+                print(f"   Resultado processing: {result}")
+                
                 if result and 'OUTPUT' in result:
                     polygon_layer = QgsVectorLayer(result['OUTPUT'], "Polygon_Mask", "ogr")
                     if polygon_layer.isValid() and polygon_layer.featureCount() > 0:
                         mask_layer = polygon_layer
-                        logger.info(f"Conversión exitosa: {polygon_layer.featureCount()} polígonos")
+                        # Asignar CRS al polígono convertido
+                        if not mask_layer.crs().isValid() and reference_crs and reference_crs.isValid():
+                            mask_layer.setCrs(reference_crs)
+                        print(f"✅ Conversión exitosa: {polygon_layer.featureCount()} polígonos")
+                        print(f"   - CRS del polígono: {mask_layer.crs().authid()}")
+                        
+                        # Debug del polígono resultante
+                        for feat in polygon_layer.getFeatures():
+                            geom = feat.geometry()
+                            if geom:
+                                print(f"   - Polígono: Área={geom.area():.2f}m², Válido={geom.isGeosValid()}")
+                                break
                     else:
-                        logger.warning("Conversión falló, usando DXF original")
+                        print(f"❌ Conversión falló: Layer inválido o vacío")
+                        print(f"   Valid: {polygon_layer.isValid()}, Features: {polygon_layer.featureCount() if polygon_layer.isValid() else 'N/A'}")
             except Exception as e:
-                logger.error(f"Error convirtiendo líneas a polígonos: {e}")
+                print(f"❌ Error en conversión: {e}")
+                import traceback
+                traceback.print_exc()
+        elif geom_type == QgsWkbTypes.PolygonGeometry:
+            print(f"✅ DXF ya es POLÍGONO, no requiere conversión")
+        else:
+            print(f"⚠️ Tipo de geometría no esperado: {geom_type}")
         
-        # Ejecutar clip
+        # Verificar CRS - usar reference_crs si está disponible
+        raster_crs = raster_layer.crs()
+        mask_crs = mask_layer.crs()
+        
+        # Si ninguno tiene CRS válido, usar reference_crs
+        working_crs = raster_crs if raster_crs.isValid() else (reference_crs if reference_crs and reference_crs.isValid() else None)
+        
+        print(f"\n🗺️ Verificación de CRS:")
+        print(f"   - Raster CRS: {raster_crs.authid() if raster_crs.isValid() else 'NO DEFINIDO'}")
+        print(f"   - Máscara CRS: {mask_crs.authid() if mask_crs.isValid() else 'NO DEFINIDO'}")
+        print(f"   - Working CRS: {working_crs.authid() if working_crs else 'NINGUNO'}")
+        
+        if not mask_crs.isValid() and working_crs:
+            print(f"⚠️ Asignando CRS a máscara: {working_crs.authid()}")
+            mask_layer.setCrs(working_crs)
+        
+        if not raster_crs.isValid() and working_crs:
+            print(f"⚠️ Asignando CRS a raster: {working_crs.authid()}")
+            raster_layer.setCrs(working_crs)
+        
+        # *** IMPORTANTE: Guardar máscara a archivo único para evitar cacheo ***
+        mask_temp_path = os.path.join(tempfile.gettempdir(), f"mask_for_clip_{wall_code}.gpkg")
+        print(f"\n📁 Guardando máscara a archivo único: {mask_temp_path}")
+        
+        # FIX: Aplicar buffer(0) para reparar geometrías inválidas que fallan silenciosamente en GDAL
+        print(f"🔧 Reparando geometrías con buffer(0)...")
+        try:
+             fixed_mask = processing.run("native:buffer", {
+                'INPUT': mask_layer,
+                'DISTANCE': 0,
+                'SEGMENTS': 5,
+                'END_CAP_STYLE': 0,
+                'JOIN_STYLE': 0,
+                'MITER_LIMIT': 2,
+                'DISSOLVE': False,
+                'OUTPUT': 'memory:'
+            })['OUTPUT']
+             mask_layer = fixed_mask
+             print(f"✅ Geometrías reparadas")
+        except Exception as e:
+            print(f"⚠️ Falló reparación de geometrías: {e}, usando original")
+
+        # Eliminar archivo anterior si existe para forzar recreación
+        if os.path.exists(mask_temp_path):
+            try:
+                os.remove(mask_temp_path)
+            except:
+                pass
+        
+        # Guardar la máscara actual a un archivo nuevo
+        from qgis.core import QgsVectorFileWriter
+        save_options = QgsVectorFileWriter.SaveVectorOptions()
+        save_options.driverName = "GPKG"
+        save_options.fileEncoding = "UTF-8"
+        
+        error = QgsVectorFileWriter.writeAsVectorFormatV3(
+            mask_layer,
+            mask_temp_path,
+            QgsProject.instance().transformContext(),
+            save_options
+        )
+        
+        if error[0] == QgsVectorFileWriter.NoError:
+            print(f"✅ Máscara guardada correctamente")
+            # Cargar la máscara desde el archivo
+            saved_mask_layer = QgsVectorLayer(mask_temp_path, "Saved_Mask", "ogr")
+            if saved_mask_layer.isValid():
+                print(f"   Extent de máscara guardada: {saved_mask_layer.extent().toString()}")
+                mask_to_use = mask_temp_path  # Usar el path del archivo
+            else:
+                print(f"⚠️ No se pudo cargar máscara guardada, usando layer original")
+                mask_to_use = mask_layer
+        else:
+            print(f"⚠️ Error guardando máscara: {error}, usando layer original")
+            mask_to_use = mask_layer
+        
+        # Ejecutar clip con CRS válido
+        clip_crs = working_crs if working_crs else raster_layer.crs()
+        
+        # *** IMPORTANTE: Normalizar path para evitar problemas con Windows short paths ***
+        # Normalizar el path del output para evitar LT_GAB~1 etc
+        output_path_normalized = os.path.normpath(output_path)
+        mask_path_normalized = os.path.normpath(mask_to_use) if isinstance(mask_to_use, str) else mask_to_use
+        
+        # Eliminar archivo anterior si existe
+        if os.path.exists(output_path_normalized):
+            try:
+                os.remove(output_path_normalized)
+                print(f"🗑️ Archivo anterior eliminado: {output_path_normalized}")
+            except Exception as e:
+                print(f"⚠️ No se pudo eliminar archivo anterior: {e}")
+        
+        # Usar path al archivo de máscara en vez de layer en memoria
         params = {
-            'INPUT': raster_layer,
-            'MASK': mask_layer,
-            'SOURCE_CRS': raster_layer.crs(),
-            'TARGET_CRS': raster_layer.crs(),
+            'INPUT': raster_layer.source(),  # Usar source path directamente
+            'MASK': mask_path_normalized,
+            'SOURCE_CRS': clip_crs,
+            'TARGET_CRS': clip_crs,
             'NODATA': -9999,
             'ALPHA_BAND': False,
             'CROP_TO_CUTLINE': True,
             'KEEP_RESOLUTION': True,
             'SET_RESOLUTION': False,
-            'OUTPUT': output_path
+            'OUTPUT': output_path_normalized
         }
         
+        print(f"\n🔄 Ejecutando gdal:cliprasterbymasklayer...")
+        print(f"   Input raster: {params['INPUT']}")
+        print(f"   Mask source: {mask_path_normalized}")
+        print(f"   Output path: {output_path_normalized}")
+        print(f"   CRS: {clip_crs.authid()}")
+        
         try:
-            logger.info("Ejecutando gdal:cliprasterbymasklayer...")
-            result = processing.run("gdal:cliprasterbymasklayer", params)
+            # Usar feedback context para capturar errores de GDAL
+            from qgis.core import QgsProcessingFeedback
+            feedback = QgsProcessingFeedback()
             
-            if result and 'OUTPUT' in result and os.path.exists(result['OUTPUT']):
-                layer = QgsRasterLayer(result['OUTPUT'], "Clipped Difference")
-                if layer.isValid():
-                    logger.info("Recorte exitoso")
-                    return layer
+            result = processing.run("gdal:cliprasterbymasklayer", params, feedback=feedback)
+            
+            print(f"   Resultado: {result}")
+            
+            if result and 'OUTPUT' in result:
+                output_from_result = result['OUTPUT']
+                
+                # Intentar múltiples variaciones del path
+                paths_to_check = [
+                    output_from_result,
+                    os.path.normpath(output_from_result),
+                    output_path_normalized,
+                    output_path
+                ]
+                
+                # También buscar en temp dir cualquier archivo que contenga wall_code
+                temp_dir = tempfile.gettempdir()
+                print(f"   Buscando archivos en temp: {temp_dir}")
+                try:
+                    temp_files = [f for f in os.listdir(temp_dir) if wall_code in f and f.endswith('.tif')]
+                    print(f"   Archivos con '{wall_code}': {temp_files}")
+                except Exception as e:
+                    print(f"   Error listando temp: {e}")
+                
+                found_path = None
+                for path in paths_to_check:
+                    if os.path.exists(path):
+                        found_path = path
+                        break
+                
+                if found_path:
+                    file_size = os.path.getsize(found_path)
+                    print(f"✅ Archivo de salida creado: {found_path} ({file_size} bytes)")
                     
+                    layer = QgsRasterLayer(found_path, "Clipped Difference")
+                    if layer.isValid():
+                        print(f"✅ CLIPPING EXITOSO")
+                        print(f"   - Extent clipped: {layer.extent().toString()}")
+                        print(f"   - Size: {layer.width()}x{layer.height()}")
+                        print(f"{'='*60}\n")
+                        logger.info("Recorte exitoso")
+                        return layer
+                    else:
+                        print(f"❌ Layer resultado es inválido")
+                else:
+                    print(f"❌ Archivo de salida NO existe en ninguna variación:")
+                    for path in paths_to_check:
+                        print(f"   - {path}: {'EXISTE' if os.path.exists(path) else 'NO EXISTE'}")
+            else:
+                print(f"❌ Resultado no contiene 'OUTPUT': {result}")
+                
         except Exception as e:
+            print(f"❌ EXCEPCIÓN en gdal:cliprasterbymasklayer: {e}")
             logger.error(f"Error recorte GDAL: {e}")
             import traceback
             traceback.print_exc()
-            return raster_layer
-            
+        
+        print(f"\n⚠️ CLIPPING FALLÓ - Retornando raster SIN recortar")
+        print(f"{'='*60}\n")
         return raster_layer
 
     def _apply_heatmap_style(self, layer):

@@ -149,6 +149,7 @@ class ProfileGenerator:
             profile = {
                 'station': station,
                 'pk': station['pk'],
+                'wall_name': wall_name, # 🆕 Add wall_name for sector logic!
                 'pk_decimal': station['pk_decimal'],
                 'centerline_x': station['x'],
                 'centerline_y': station['y'],

@@ -88,6 +88,12 @@ class RevanchasLTDialog(QtWidgets.QDialog, FORM_CLASS):
             info_text += f"Estaciones cada {alignment['interval']}m\n"
             info_text += f"Total de estaciones: {len(alignment['stations'])}"
             self.alignment_info_label.setText(info_text)
+            
+        # 🆕 LIMPIEZA DE CACHE AL CAMBIAR MURO
+        # Esto previene que mediciones de un muro anterior aparezcan en el nuevo
+        if hasattr(self, '_cached_measurements'):
+            self._cached_measurements = {}
+            print(f"🧹 Cache de mediciones limpiado por cambio de muro a: {wall_name}")
         
     def browse_dem_file(self):
         """Browse for DEM file with alignment coverage validation"""

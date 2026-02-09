@@ -7,8 +7,9 @@ from qgis.PyQt.QtCore import Qt, QTimer
 from qgis.PyQt.QtXml import QDomDocument
 from qgis.PyQt.QtGui import QFont, QKeySequence
 from qgis.core import (QgsApplication, QgsProject, QgsRasterLayer, QgsPointXY, QgsRectangle,
-                       QgsPrintLayout, QgsLayoutExporter, QgsLayoutItemHtml, 
-                       QgsLayoutItemPicture, QgsLayoutSize, QgsUnitTypes, QgsLayoutPoint, QgsReadWriteContext)
+                       QgsPrintLayout, QgsLayoutExporter, QgsLayoutItemHtml, QgsLayoutFrame,
+                       QgsLayoutItemPicture, QgsLayoutSize, QgsUnitTypes, QgsLayoutPoint, QgsReadWriteContext,
+                       QgsLayoutItemLabel)
 
 def diagnose_libraries():
     """Diagnose library versions for debugging compatibility issues"""
@@ -731,13 +732,6 @@ class InteractiveProfileViewer(QDialog):
         self.export_pdf_btn.clicked.connect(self.export_pdf_report)
         self.export_pdf_btn.clicked.connect(self.export_pdf_report)
         btn_layout3.addWidget(self.export_pdf_btn)
-        
-        # 🆕 BOTÓN DE DESARROLLO (SOLO PARA DEV)
-        self.dev_map_btn = QPushButton("🛠️ Generar Mapa (Dev)")
-        self.dev_map_btn.setStyleSheet("background-color: #607D8B; color: white; border: 1px dashed white;")
-        self.dev_map_btn.setToolTip("Generar solo la imagen del mapa para pruebas")
-        self.dev_map_btn.clicked.connect(self.generate_dev_map)
-        btn_layout3.addWidget(self.dev_map_btn)
         
         # Measurement results
         self.crown_result = QLabel("Cota Coronamiento: --")
@@ -1953,17 +1947,18 @@ class InteractiveProfileViewer(QDialog):
         
         valid_distances, valid_elevations = zip(*valid_data)
         
-        # 🆕 Plot Previous Terrain (Background)
-        previous_elevations = profile.get('previous_elevations', [])
-        if previous_elevations and len(previous_elevations) == len(distances):
-            # Filter valid previous data
-            valid_prev_data = [(d, pe) for d, pe in zip(distances, previous_elevations) 
-                             if pe != -9999 and x_min <= d <= x_max]
-            
-            if valid_prev_data:
-                prev_d, prev_e = zip(*valid_prev_data)
-                self.ax.plot(prev_d, prev_e, '--', color='gray', linewidth=1.0, 
-                           alpha=0.6, label='Terreno Anterior', zorder=0)
+        # 🆕 Plot Previous Terrain (Background) - SOLO en modo interactivo
+        if not export_mode:
+            previous_elevations = profile.get('previous_elevations', [])
+            if previous_elevations and len(previous_elevations) == len(distances):
+                # Filter valid previous data
+                valid_prev_data = [(d, pe) for d, pe in zip(distances, previous_elevations) 
+                                 if pe != -9999 and x_min <= d <= x_max]
+                
+                if valid_prev_data:
+                    prev_d, prev_e = zip(*valid_prev_data)
+                    self.ax.plot(prev_d, prev_e, '--', color='gray', linewidth=1.0, 
+                               alpha=0.6, label='Terreno Anterior', zorder=0)
 
         # 🎨 Plot the profile with FINER LINE and MORE DETAIL
         self.ax.plot(valid_distances, valid_elevations, 'b-', linewidth=1.2,
@@ -1974,63 +1969,65 @@ class InteractiveProfileViewer(QDialog):
                         min(valid_elevations) - 2, alpha=0.15, color='brown',
                         label='Terreno')
         
-        # 📍 Mark centerline
-        self.ax.axvline(x=0, color='red', linestyle='--', linewidth=1.8, alpha=0.8, 
-                    label='Eje de Alineación')
+        # 📍 Mark centerline - SOLO en modo interactivo
+        if not export_mode:
+            self.ax.axvline(x=0, color='red', linestyle='--', linewidth=1.8, alpha=0.8, 
+                        label='Eje de Alineación')
         
-        # 🆕 REFERENCE LINES - Different logic based on operation mode
-        if self.operation_mode == "ancho_proyectado":
-            # Modo Ancho Proyectado: Línea en lama, línea +2m (visual) y línea +3m (medición)
-            lama_elevation = None
-            
-            # Get lama point (selected manually)
-            if current_pk in self.saved_measurements and 'lama_selected' in self.saved_measurements[current_pk]:
-                lama_elevation = self.saved_measurements[current_pk]['lama_selected']['y']
-            elif self.current_crown_point:
-                lama_elevation = self.current_crown_point[1]
+        # 🆕 REFERENCE LINES - Different logic based on operation mode - SOLO en modo interactivo
+        if not export_mode:
+            if self.operation_mode == "ancho_proyectado":
+                # Modo Ancho Proyectado: Línea en lama, línea +2m (visual) y línea +3m (medición)
+                lama_elevation = None
                 
-            if lama_elevation is not None:
-                x_range = [x_min, x_max]
+                # Get lama point (selected manually)
+                if current_pk in self.saved_measurements and 'lama_selected' in self.saved_measurements[current_pk]:
+                    lama_elevation = self.saved_measurements[current_pk]['lama_selected']['y']
+                elif self.current_crown_point:
+                    lama_elevation = self.current_crown_point[1]
+                    
+                if lama_elevation is not None:
+                    x_range = [x_min, x_max]
+                    
+                    # Línea en la lama (visual reference)
+                    y_lama = [lama_elevation, lama_elevation]
+                    self.ax.plot(x_range, y_lama, ':', color='yellow', linewidth=2.0, 
+                                alpha=0.8, label=f'Lama: {lama_elevation:.2f}m', zorder=2)
+                    
+                    # 🆕 Línea de ayuda visual (+2m) - MÁS TENUE
+                    visual_elevation = lama_elevation + 2.0
+                    y_visual = [visual_elevation, visual_elevation]
+                    self.ax.plot(x_range, y_visual, ':', color='gray', linewidth=1.0, 
+                                alpha=0.4, label=f'Visual +2m: {visual_elevation:.2f}m', zorder=1)
+                    
+                    # Línea de referencia 3m arriba (para medición)
+                    reference_elevation = lama_elevation + 3.0
+                    y_ref = [reference_elevation, reference_elevation]
+                    self.ax.plot(x_range, y_ref, '--', color='orange', linewidth=2.5, 
+                                alpha=1.0, label=f'Ref. +3m: {reference_elevation:.2f}m', zorder=3)
+            else:
+                # Modo Revancha: Línea de coronamiento y auxiliar
+                crown_elevation = None
+                if current_pk in self.saved_measurements and 'crown' in self.saved_measurements[current_pk]:
+                    crown_elevation = self.saved_measurements[current_pk]['crown']['y']
+                elif self.current_crown_point:
+                    crown_elevation = self.current_crown_point[1]
                 
-                # Línea en la lama (visual reference)
-                y_lama = [lama_elevation, lama_elevation]
-                self.ax.plot(x_range, y_lama, ':', color='yellow', linewidth=2.0, 
-                            alpha=0.8, label=f'Lama: {lama_elevation:.2f}m', zorder=2)
-                
-                # 🆕 Línea de ayuda visual (+2m) - MÁS TENUE
-                visual_elevation = lama_elevation + 2.0
-                y_visual = [visual_elevation, visual_elevation]
-                self.ax.plot(x_range, y_visual, ':', color='gray', linewidth=1.0, 
-                            alpha=0.4, label=f'Visual +2m: {visual_elevation:.2f}m', zorder=1)
-                
-                # Línea de referencia 3m arriba (para medición)
-                reference_elevation = lama_elevation + 3.0
-                y_ref = [reference_elevation, reference_elevation]
-                self.ax.plot(x_range, y_ref, '--', color='orange', linewidth=2.5, 
-                            alpha=1.0, label=f'Ref. +3m: {reference_elevation:.2f}m', zorder=3)
-        else:
-            # Modo Revancha: Línea de coronamiento y auxiliar
-            crown_elevation = None
-            if current_pk in self.saved_measurements and 'crown' in self.saved_measurements[current_pk]:
-                crown_elevation = self.saved_measurements[current_pk]['crown']['y']
-            elif self.current_crown_point:
-                crown_elevation = self.current_crown_point[1]
-            
-            if crown_elevation is not None:
-                x_range = [x_min, x_max]
-                
-                # 🔥 MAIN REFERENCE LINE - MÁS INTENSA
-                y_ref = [crown_elevation, crown_elevation]
-                self.ax.plot(x_range, y_ref, '--', color='orange', linewidth=2.5, 
-                            alpha=1.0, label=f'Ref. Coronamiento: {crown_elevation:.2f}m',
-                            zorder=3)
-                
-                # 🆕 AUXILIARY LINE - 1 metro debajo, MÁS TENUE
-                aux_elevation = crown_elevation - 1.0  # 1 metro abajo
-                y_aux = [aux_elevation, aux_elevation]
-                self.ax.plot(x_range, y_aux, ':', color='gray', linewidth=1.5, 
-                            alpha=0.6, label=f'Auxiliar (-1m): {aux_elevation:.2f}m',
-                            zorder=2)
+                if crown_elevation is not None:
+                    x_range = [x_min, x_max]
+                    
+                    # 🔥 MAIN REFERENCE LINE - MÁS INTENSA
+                    y_ref = [crown_elevation, crown_elevation]
+                    self.ax.plot(x_range, y_ref, '--', color='orange', linewidth=2.5, 
+                                alpha=1.0, label=f'Ref. Coronamiento: {crown_elevation:.2f}m',
+                                zorder=3)
+                    
+                    # 🆕 AUXILIARY LINE - 1 metro debajo, MÁS TENUE
+                    aux_elevation = crown_elevation - 1.0  # 1 metro abajo
+                    y_aux = [aux_elevation, aux_elevation]
+                    self.ax.plot(x_range, y_aux, ':', color='gray', linewidth=1.5, 
+                                alpha=0.6, label=f'Auxiliar (-1m): {aux_elevation:.2f}m',
+                                zorder=2)
         
         # 📏 Show SAVED measurements for current PK - Different based on mode
         if current_pk in self.saved_measurements:
@@ -2055,12 +2052,15 @@ class InteractiveProfileViewer(QDialog):
                     line_style = '-' if auto_detected else '--'
                     label_prefix = 'Auto' if auto_detected else 'Manual'
                     
-                    self.ax.plot([p1[0], p2[0]], [p1[1], p2[1]], 'o', color=color, markersize=marker_size, zorder=4)
+                    # En export_mode, NO dibujar los puntos extremos, solo la línea
+                    if not export_mode:
+                        self.ax.plot([p1[0], p2[0]], [p1[1], p2[1]], 'o', color=color, markersize=marker_size, zorder=4)
                     self.ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color=color, linestyle=line_style, 
                             linewidth=2.5, alpha=0.9, label=f'Ancho {label_prefix}: {width_data["distance"]:.2f}m', zorder=4)
             else:
                 # Modo Revancha (lógica original)
-                if 'crown' in measurements:
+                # En export_mode, NO dibujar punto de coronamiento (rojo)
+                if 'crown' in measurements and not export_mode:
                     crown_data = measurements['crown']
                     self.ax.plot(crown_data['x'], crown_data['y'], 'ro', markersize=10, 
                             label=f'Cota Coronamiento: {crown_data["y"]:.2f}m', zorder=4)
@@ -2076,7 +2076,9 @@ class InteractiveProfileViewer(QDialog):
                     line_style = '-' if auto_detected else '--'
                     label_prefix = 'Auto' if auto_detected else 'Manual'
                     
-                    self.ax.plot([p1[0], p2[0]], [p1[1], p2[1]], 'o', color=color, markersize=marker_size, zorder=4)
+                    # En export_mode, NO dibujar los puntos extremos, solo la línea
+                    if not export_mode:
+                        self.ax.plot([p1[0], p2[0]], [p1[1], p2[1]], 'o', color=color, markersize=marker_size, zorder=4)
                     self.ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color=color, linestyle=line_style, 
                             linewidth=2.5, alpha=0.9, label=f'{label_prefix}: {width_data["distance"]:.2f}m', zorder=4)
                 
@@ -2088,23 +2090,26 @@ class InteractiveProfileViewer(QDialog):
                             label=f'LAMA Manual: {lama_data["y"]:.2f}m', zorder=4)
         
         # Show automatic LAMA points (only in Revancha mode and if no manual override)
-        if (self.operation_mode == "revancha" and 
-            (current_pk not in self.saved_measurements or 'lama' not in self.saved_measurements[current_pk])):
-            lama_points = profile.get('lama_points', [])
-            if lama_points:
-                for lama_point in lama_points:
-                    self.ax.plot(lama_point['offset_from_centerline'], lama_point['elevation'], 
-                                'o', color='yellow', markersize=10, markeredgecolor='brown',
-                                markeredgewidth=2, label=f'LAMA Auto: {lama_point["elevation"]:.2f}m', zorder=4)
+        # EN EXPORT_MODE: Mostrar si no hay manual override
+        if self.operation_mode == "revancha":
+            if current_pk not in self.saved_measurements or 'lama' not in self.saved_measurements[current_pk]:
+                lama_points = profile.get('lama_points', [])
+                if lama_points:
+                    for lama_point in lama_points:
+                        # Dibujar siempre (incluso en export_mode)
+                        self.ax.plot(lama_point['offset_from_centerline'], lama_point['elevation'], 
+                                    'o', color='orange', markersize=12, markeredgecolor='red',
+                                    markeredgewidth=2, label=f'LAMA Auto: {lama_point["elevation"]:.2f}m', zorder=4)
         
-        # 🎯 Show current temporary measurements
-        if self.current_crown_point:
-            self.ax.plot(self.current_crown_point[0], self.current_crown_point[1], 'go', 
-                        markersize=12, alpha=0.8, label='Cota (temp)', zorder=5)
-        
-        if len(self.current_width_points) == 1:
-            self.ax.plot(self.current_width_points[0][0], self.current_width_points[0][1], 
-                        'yo', markersize=10, label='Punto 1', zorder=5)
+        # 🎯 Show current temporary measurements - NO en export_mode
+        if not export_mode:
+            if self.current_crown_point:
+                self.ax.plot(self.current_crown_point[0], self.current_crown_point[1], 'go', 
+                            markersize=12, alpha=0.8, label='Cota (temp)', zorder=5)
+            
+            if len(self.current_width_points) == 1:
+                self.ax.plot(self.current_width_points[0][0], self.current_width_points[0][1], 
+                            'yo', markersize=10, label='Punto 1', zorder=5)
         
         # 🎨 Formatting with MORE DETAIL
         self.ax.grid(True, alpha=0.3, linestyle=':', linewidth=0.6)
@@ -2121,61 +2126,54 @@ class InteractiveProfileViewer(QDialog):
         if self.show_legend and not export_mode:
             self.ax.legend(loc='upper right', fontsize=9)
         elif export_mode:
-            # 📸 LEYENDA DETALLADA PARA PANTALLAZOS
-            from matplotlib.lines import Line2D
-            custom_handles = []
+            # 📸 LEYENDA SIMPLIFICADA PARA PANTALLAZOS DE ALERTAS
+            legend_lines = []
             
-            # 1. Cota Coronamiento / Lama
+            # 1. Cota Coronamiento (línea verde)
             crown_val = None
-            if self.operation_mode == "ancho_proyectado":
-                if current_pk in self.saved_measurements and 'lama_selected' in self.saved_measurements[current_pk]:
-                    crown_val = self.saved_measurements[current_pk]['lama_selected']['y']
-                    custom_handles.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='yellow', 
-                                              markersize=10, label=f'Lama: {crown_val:.2f}m'))
-            else:
-                 if current_pk in self.saved_measurements and 'crown' in self.saved_measurements[current_pk]:
-                    crown_val = self.saved_measurements[current_pk]['crown']['y']
-                    custom_handles.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='darkgreen', 
-                                              markersize=10, label=f'Cota Coronamiento: {crown_val:.2f}m'))
-
-            # 2. LAMA (solo revancha)
+            if current_pk in self.saved_measurements and 'crown' in self.saved_measurements[current_pk]:
+                crown_val = self.saved_measurements[current_pk]['crown']['y']
+                legend_lines.append(f"─ Cota Coronamiento: {crown_val:.2f} m")
+            
+            # 2. Cota Lama (punto naranja)
             lama_val = None
-            if self.operation_mode == "revancha":
-                if current_pk in self.saved_measurements and 'lama' in self.saved_measurements[current_pk]:
+            if current_pk in self.saved_measurements:
+                # Buscar lama en diferentes formatos según modo
+                if 'lama' in self.saved_measurements[current_pk]:
                     lama_val = self.saved_measurements[current_pk]['lama']['y']
-                elif 'lama_points' in profile and profile['lama_points']:
-                    lama_val = profile['lama_points'][0]['elevation']
-                
-                if lama_val is not None:
-                     custom_handles.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='yellow', 
-                                              markersize=10, markeredgecolor='brown', label=f'LAMA: {lama_val:.2f}m'))
-
-            # 3. Revancha
+                elif 'lama_selected' in self.saved_measurements[current_pk]:
+                    lama_val = self.saved_measurements[current_pk]['lama_selected']['y']
+            
+            # Fallback a lama automática
+            if lama_val is None and 'lama_points' in profile and profile['lama_points']:
+                lama_val = profile['lama_points'][0]['elevation']
+            
+            if lama_val is not None:
+                legend_lines.append(f"● Cota Lama: {lama_val:.2f} m")
+            
+            # 3. Revancha (sin símbolo)
             if crown_val is not None and lama_val is not None:
-                revancha = crown_val - lama_val
-                
-                # Formato con color rojo si es menor a 3m
-                if revancha < 3.0:
-                    label_text = r"Revancha: $\mathdefault{\color{red}{" + f"{revancha:.2f}" + r"}}$ m"
-                else:
-                    label_text = f"Revancha: {revancha:.2f}m"
-                    
-                custom_handles.append(Line2D([0], [0], color='none', label=label_text))
-
-            # 4. Ancho
+                revancha_val = crown_val - lama_val
+                legend_lines.append(f"  Revancha: {revancha_val:.2f} m")
+            
+            # 4. Ancho (línea verde)
             width_val = None
             if current_pk in self.saved_measurements and 'width' in self.saved_measurements[current_pk]:
                 width_val = self.saved_measurements[current_pk]['width']['distance']
-                
-                # Formato con color rojo si es menor a 15m
-                if width_val < 15.0:
-                    label_text = r"Ancho: $\mathdefault{\color{red}{" + f"{width_val:.2f}" + r"}}$ m"
-                else:
-                    label_text = f"Ancho: {width_val:.2f}m"
-                    
-                custom_handles.append(Line2D([0], [0], color='lime', linewidth=2, label=label_text))
+                legend_lines.append(f"─ Ancho: {width_val:.2f} m")
             
-            self.ax.legend(handles=custom_handles, loc='upper right', framealpha=0.9, fontsize=10)
+            # Construir leyenda como texto
+            if legend_lines:
+                legend_text = "\n".join(legend_lines)
+                # Agregar cuadro de texto con la información
+                self.ax.text(0.98, 0.98, legend_text,
+                           transform=self.ax.transAxes,
+                           fontsize=11,
+                           verticalalignment='top',
+                           horizontalalignment='right',
+                           bbox=dict(boxstyle='round', facecolor='white', alpha=0.9, edgecolor='black', linewidth=1.5),
+                           family='monospace',
+                           weight='bold')
         else:
             # Remover leyenda si existe
             legend = self.ax.get_legend()
@@ -2829,25 +2827,124 @@ class InteractiveProfileViewer(QDialog):
             print(f"Error generating longitudinal chart: {e}")
             return False
 
-    def generate_detail_html_table(self):
-        """Generate HTML for Table 1: Detailed Measurements"""
+    def generate_detail_html_table(self, geo_manager=None, frame_height_mm=220):
+        """
+        Generate HTML for Table 1: Detailed Measurements (Single Column - Compact)
         
-        # CSS Style (Blue Header)
-        style = """
+        Args:
+            geo_manager: GeomembraneManager instance
+            frame_height_mm: Altura del frame en mm (para cálculo de fill dinámico)
+        """
+        
+        # 1. Prepare Data & Sorting
+        sorted_profiles = sorted(self.profiles_data, key=lambda x: self.parse_pk(str(x.get('pk', '0'))))
+        total_rows = len(sorted_profiles)
+        
+        # 🔍 DIAGNOSTICS: Show row count per wall
+        wall_name = self.profiles_data[self.current_profile_index].get('wall_name', "Muro 1") if self.profiles_data else "Desconocido"
+        print(f"\n📊 DIAGNÓSTICO TABLA DETAIL:")
+        print(f"   Muro: {wall_name}")
+        print(f"   Total Filas: {total_rows}")
+        print(f"   Frame Height: {frame_height_mm}mm")
+        
+        # 2. NUEVO: Cálculo Dinámico para LLENAR el Frame exactamente
+        # Convertir mm a px (aprox 3.78 px/mm en QGIS rendering)
+        px_per_mm = 3.78
+        frame_height_px = frame_height_mm * px_per_mm  # ej: 220mm = 831px
+        
+        # Reservar espacio para header (2 filas de encabezado)
+        header_height_px = 30  # Aprox 2 filas de header con borders
+        
+        # Espacio disponible para las filas de datos
+        available_height_px = frame_height_px - header_height_px
+        
+        # Calcular altura POR FILA para llenar exactamente el espacio
+        row_height_px = available_height_px / total_rows
+        
+        # Determinar font-size base según cantidad de filas (legibilidad)
+        if total_rows > 80:
+            base_font_px = 6    # Mínimo para legibilidad
+        elif total_rows > 60:
+            base_font_px = 7
+        elif total_rows > 40:
+            base_font_px = 8
+        elif total_rows > 25:
+            base_font_px = 9
+        else:
+            base_font_px = 10
+        
+        # Calcular padding para llenar la altura de fila
+        # row_height = font_size * line_height + (padding_top + padding_bottom) + border
+        line_height = 1.2
+        border_height = 2  # 1px arriba + 1px abajo
+        content_height = base_font_px * line_height
+        remaining_space = row_height_px - content_height - border_height
+        padding_vertical_px = max(0, remaining_space / 2)  # Top + bottom
+        
+        # Convertir a valores CSS
+        font_size = f"{base_font_px}px"
+        padding_vertical = f"{padding_vertical_px:.1f}px"
+        padding_horizontal = "2px"  # Fijo para no hacer muy ancho
+        
+        print(f"   🎨 Cálculo Fill Dinámico:")
+        print(f"      • Altura Frame: {frame_height_mm}mm ({frame_height_px:.0f}px)")
+        print(f"      • Espacio p/filas: {available_height_px:.0f}px")
+        print(f"      • Altura por fila: {row_height_px:.1f}px")
+        print(f"      • Font: {font_size}, Padding V: {padding_vertical}, Line-H: {line_height}")
+        
+        font_size_final = font_size
+        padding_final = f"{padding_vertical} {padding_horizontal}"
+        line_height_final = str(line_height)
+             
+        # 3. CSS Styles con Fill Dinámico + Colores por Rangos
+        style = f"""
         <style>
-            table { border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; font-size: 10px; }
-            th { background-color: #2b579a; color: white; padding: 6px; border: 1px solid #ddd; text-align: left; }
-            td { padding: 5px; border: 1px solid #ddd; text-align: left; }
-            tr:nth-child(even) { background-color: #f8f9fa; }
-            .alert { color: red; font-weight: bold; }
-            .geomembrane-col { background-color: #f0f0f0; color: #555; } /* Placeholder visual cue? Optional */
+            table {{ 
+                border-collapse: collapse; 
+                width: 100%; 
+                height: 100%;
+                font-family: Arial, sans-serif; 
+                font-size: {font_size_final}; 
+                line-height: {line_height_final};
+            }}
+            th {{ 
+                background-color: #EF7F1A; 
+                color: white; 
+                padding: 3px {padding_horizontal}; 
+                border: 1px solid #ddd; 
+                text-align: center; 
+                font-weight: bold; 
+                white-space: nowrap; 
+            }}
+            td {{ 
+                padding: {padding_final}; 
+                border: 1px solid #ddd; 
+                text-align: left; 
+                white-space: nowrap; 
+                line-height: {line_height_final};
+                height: {row_height_px:.1f}px;
+            }}
+            tr {{ page-break-inside: auto; }}
+            tbody tr:nth-child(even) {{ background-color: #f8f9fa; }}
+            .geo-col {{ background-color: #f9f9f9; }}
+            /* Colores por Rango - Revancha */
+            .rev-green {{ color: #2e7d32; font-weight: bold; }}
+            .rev-yellow {{ color: #f57f17; font-weight: bold; }}
+            .rev-red {{ color: #c62828; font-weight: bold; }}
+            /* Colores por Rango - Ancho */
+            .ancho-green {{ color: #2e7d32; font-weight: bold; }}
+            .ancho-yellow {{ color: #f57f17; font-weight: bold; }}
+            .ancho-red {{ color: #c62828; font-weight: bold; }}
+            /* Colores por Rango - Geomembrana */
+            .geo-yellow {{ color: #f57f17; font-weight: bold; }}
+            .geo-red {{ color: #c62828; font-weight: bold; }}
         </style>
         """
         
         html = [style, "<table>"]
         
-        # Headers
-        headers = ["Sector", "PK", "Coronamiento", "Revancha", "Lama", "Ancho", "Geomembrana", "Dist. G-L", "Dist. G-C"]
+        # Headers (Reverted to Full Names)
+        headers = ["Sector", "PK", "Coronam.", "Revancha", "Lama", "Ancho", "Geomemb.", "D. G-L", "D. G-C"]
         html.append("<thead><tr>")
         for h in headers:
             html.append(f"<th>{h}</th>")
@@ -2855,17 +2952,21 @@ class InteractiveProfileViewer(QDialog):
         
         html.append("<tbody>")
         
-        # Data Rows (Sorted by PK)
-        # We assume self.profiles_data contains all PKs, we merge with saved measurements
-        sorted_profiles = sorted(self.profiles_data, key=lambda x: self.parse_pk(str(x.get('pk', '0'))))
+        # Import utilities
+        from .core.sector_utils import get_sector_for_profile
+        # Ensure wall_name for sector logic
+        wall_name = self.profiles_data[self.current_profile_index].get('wall_name', "Muro 1")
         
         for profile in sorted_profiles:
             pk = str(profile.get('pk', ''))
             measurements = self.saved_measurements.get(pk, {})
+            profile['wall_name'] = wall_name 
             
+            # --- DATA EXTRACTION & FORMATTING ---
             # 1. Values
             crown_val = measurements.get('crown', {}).get('y')
             lama_val = measurements.get('lama', {}).get('y')
+            
             # Auto lama fallback
             if lama_val is None and profile.get('lama_points'):
                 lama_val = profile['lama_points'][0]['elevation']
@@ -2876,33 +2977,68 @@ class InteractiveProfileViewer(QDialog):
                 
             width_val = measurements.get('width', {}).get('distance')
             
-            # Geomembrane placeholders
-            geomembrane_val = 0.00
-            dist_gl_val = 0.00
-            dist_gc_val = 0.00
+            # Geomembrane Logic
+            geomembrane_val = None
+            if geo_manager:
+                geomembrane_val = geo_manager.get_elevation(wall_name, pk)
             
-            # 2. Formatting & Alerts
-            sector_txt = "Sector 1" # Default
+            # Formatting
+            sector_txt = get_sector_for_profile(profile)
             pk_txt = pk
             
             coronamiento_txt = f"{crown_val:.3f}" if crown_val is not None else "-"
             
-            revancha_cls = "alert" if (revancha_val is not None and revancha_val < 3.0) else ""
-            revancha_txt = f"{revancha_val:.3f}" if revancha_val is not None else "-"
-            if revancha_cls: revancha_txt = f"<span class='{revancha_cls}'>{revancha_txt}</span>"
+            # Revancha con colores por rango
+            revancha_txt = "-"
+            if revancha_val is not None:
+                if revancha_val > 3.5:
+                    revancha_txt = f"<span class='rev-green'>{revancha_val:.3f}</span>"
+                elif revancha_val >= 3.0:
+                    revancha_txt = f"<span class='rev-yellow'>{revancha_val:.3f}</span>"
+                else:
+                    revancha_txt = f"<span class='rev-red'>{revancha_val:.3f}</span>"
             
             lama_txt = f"{lama_val:.3f}" if lama_val is not None else "-"
             
-            ancho_cls = "alert" if (width_val is not None and width_val < 15.0) else ""
-            ancho_txt = f"{width_val:.3f}" if width_val is not None else "-"
-            if ancho_cls: ancho_txt = f"<span class='{ancho_cls}'>{ancho_txt}</span>"
+            # Ancho con colores por rango
+            ancho_txt = "-"
+            if width_val is not None:
+                if width_val > 18.0:
+                    ancho_txt = f"<span class='ancho-green'>{width_val:.3f}</span>"
+                elif width_val >= 15.0:
+                    ancho_txt = f"<span class='ancho-yellow'>{width_val:.3f}</span>"
+                else:
+                    ancho_txt = f"<span class='ancho-red'>{width_val:.3f}</span>"
             
-            # Placeholders
-            geo_txt = "0.000"
-            dgl_txt = "0.000"
-            dgc_txt = "0.000"
+            # Geo columns con colores por rango
+            geo_txt = "-"
+            dgl_txt = "-"
+            dgc_txt = "-"
             
-            # Row Construction
+            if geomembrane_val is not None:
+                geo_txt = f"{geomembrane_val:.3f}"  # Sin color, valor de referencia
+                
+                # D. G-L (Geomembrana - Lama) con colores
+                if lama_val is not None:
+                    dgl_val = geomembrane_val - lama_val
+                    if dgl_val > 1.0:
+                        dgl_txt = f"{dgl_val:.3f}"  # Normal (negro)
+                    elif dgl_val >= 0.5:
+                        dgl_txt = f"<span class='geo-yellow'>{dgl_val:.3f}</span>"
+                    else:
+                        dgl_txt = f"<span class='geo-red'>{dgl_val:.3f}</span>"
+                
+                # D. G-C (Coronamiento - Geomembrana) con colores
+                if crown_val is not None:
+                    dgc_val = crown_val - geomembrane_val
+                    if dgc_val > 1.0:
+                        dgc_txt = f"{dgc_val:.3f}"  # Normal (negro)
+                    elif dgc_val >= 0.5:
+                        dgc_txt = f"<span class='geo-yellow'>{dgc_val:.3f}</span>"
+                    else:
+                        dgc_txt = f"<span class='geo-red'>{dgc_val:.3f}</span>"
+
+            # Add Row
             html.append(f"<tr>")
             html.append(f"<td>{sector_txt}</td>")
             html.append(f"<td>{pk_txt}</td>")
@@ -2910,29 +3046,104 @@ class InteractiveProfileViewer(QDialog):
             html.append(f"<td>{revancha_txt}</td>")
             html.append(f"<td>{lama_txt}</td>")
             html.append(f"<td>{ancho_txt}</td>")
-            html.append(f"<td>{geo_txt}</td>")
-            html.append(f"<td>{dgl_txt}</td>")
-            html.append(f"<td>{dgc_txt}</td>")
+            html.append(f"<td class='geo-col'>{geo_txt}</td>")
+            html.append(f"<td class='geo-col'>{dgl_txt}</td>")
+            html.append(f"<td class='geo-col'>{dgc_txt}</td>")
             html.append(f"</tr>")
             
         html.append("</tbody></table>")
         return "".join(html)
 
-    def generate_summary_html_table(self):
+    def diagnose_table_sizing(self):
+        """
+        🔍 HERRAMIENTA DE DIAGNÓSTICO: Analiza cuántas filas tiene cada muro
+        y recomienda ajustes de tamaño para el layout QPT.
+        
+        Llámalo desde la consola Python de QGIS:
+        >>> dialog.profile_viewer_dialog.diagnose_table_sizing()
+        """
+        if not self.profiles_data:
+            print("⚠️ No hay datos de perfiles cargados para diagnosticar")
+            return
+        
+        wall_name = self.profiles_data[self.current_profile_index].get('wall_name', "Desconocido")
+        total_rows = len(self.profiles_data)
+        
+        # Calcular configuración sugerida
+        if total_rows > 80:
+            config = {"font": "4.5px", "padding": "0.5px", "line_height": "1.1", "frame_height": "220mm"}
+        elif total_rows > 60:
+            config = {"font": "5px", "padding": "1px", "line_height": "1.15", "frame_height": "210mm"}
+        elif total_rows > 40:
+            config = {"font": "6px", "padding": "2px", "line_height": "1.2", "frame_height": "190mm"}
+        elif total_rows > 25:
+            config = {"font": "6.5px", "padding": "2.5px", "line_height": "1.25", "frame_height": "170mm"}
+        else:
+            config = {"font": "7px", "padding": "3px", "line_height": "1.3", "frame_height": "150mm"}
+        
+        # Altura estimada por fila (aprox)
+        row_height_mm = {
+            "4.5px": 2.5,
+            "5px": 2.8,
+            "6px": 3.2,
+            "6.5px": 3.5,
+            "7px": 4.0
+        }.get(config["font"], 3.5)
+        
+        estimated_height = total_rows * row_height_mm
+        
+        print("\n" + "="*70)
+        print("🔍 DIAGNÓSTICO DE TABLA DETAIL - AJUSTE DE LAYOUT")
+        print("="*70)
+        print(f"📁 Muro: {wall_name}")
+        print(f"📊 Total de Filas (Perfiles): {total_rows}")
+        print(f"\n🎨 CONFIGURACIÓN CSS AUTOMÁTICA:")
+        print(f"   • Font Size:    {config['font']}")
+        print(f"   • Padding:      {config['padding']}")
+        print(f"   • Line Height:  {config['line_height']}")
+        print(f"\n📐 AJUSTE RECOMENDADO EN LAYOUT QPT:")
+        print(f"   • Altura Estimada de Tabla: ~{estimated_height:.1f} mm")
+        print(f"   • Frame 'detail_table' - Alto Sugerido: {config['frame_height']}")
+        print(f"\n🛠️ PASOS PARA AJUSTAR EN QGIS:")
+        print(f"   1. Abrir 'report_template.qpt' en el Layout Manager")
+        print(f"   2. Seleccionar el Frame 'detail_table'")
+        print(f"   3. En 'Propiedades del Elemento' → Posición y Tamaño")
+        print(f"   4. Ajustar Alto (Height) a: {config['frame_height']}")
+        print(f"   5. Si sigue desbordando, aumentar +10mm y probar de nuevo")
+        print("="*70 + "\n")
+        
+        return {
+            "wall_name": wall_name,
+            "total_rows": total_rows,
+            "config": config,
+            "estimated_height_mm": estimated_height
+        }
+
+    def generate_summary_html_table(self, geo_manager=None):
         """Generate HTML for Table 2: Summary Measurements"""
+        from .core.sector_utils import get_sector_for_profile
         
-        # Structure to hold aggregated data
-        # Since we only have "Sector 1", we just calculate min/max for all data
-        # If we had multiple sectors, we'd dict Key=Sector -> values
+        # Structure to hold aggregated data per sector
+        sectors_data = {}
         
-        # Find Min/Max
-        min_rev, max_rev = (None, None), (None, None) # (Value, PK)
-        min_ancho, max_ancho = (None, None), (None, None)
-        min_crown, max_crown = (None, None), (None, None)
+        wall_name = self.profiles_data[self.current_profile_index].get('wall_name', "Muro 1")
         
         for profile in self.profiles_data:
+            profile['wall_name'] = wall_name 
             pk = str(profile.get('pk', ''))
             measurements = self.saved_measurements.get(pk, {})
+            
+            # Determine Sector
+            sector_name = get_sector_for_profile(profile)
+            
+            if sector_name not in sectors_data:
+                sectors_data[sector_name] = {
+                    'min_rev': [None, None], 'max_rev': [None, None],
+                    'min_ancho': [None, None], 'max_ancho': [None, None],
+                    'min_crown': [None, None], 'max_crown': [None, None]
+                }
+            
+            stats = sectors_data[sector_name]
             
             # Revancha
             crown_val = measurements.get('crown', {}).get('y')
@@ -2945,36 +3156,44 @@ class InteractiveProfileViewer(QDialog):
                 revancha_val = crown_val - lama_val
                 
                 # Check Min
-                if min_rev[0] is None or revancha_val < min_rev[0]:
-                    min_rev = (revancha_val, pk)
+                if stats['min_rev'][0] is None or revancha_val < stats['min_rev'][0]:
+                    stats['min_rev'] = [revancha_val, pk]
                 # Check Max
-                if max_rev[0] is None or revancha_val > max_rev[0]:
-                    max_rev = (revancha_val, pk)
+                if stats['max_rev'][0] is None or revancha_val > stats['max_rev'][0]:
+                    stats['max_rev'] = [revancha_val, pk]
             
             # Ancho
             width_val = measurements.get('width', {}).get('distance')
             if width_val is not None:
-                if min_ancho[0] is None or width_val < min_ancho[0]:
-                    min_ancho = (width_val, pk)
-                if max_ancho[0] is None or width_val > max_ancho[0]:
-                    max_ancho = (width_val, pk)
+                if stats['min_ancho'][0] is None or width_val < stats['min_ancho'][0]:
+                    stats['min_ancho'] = [width_val, pk]
+                if stats['max_ancho'][0] is None or width_val > stats['max_ancho'][0]:
+                    stats['max_ancho'] = [width_val, pk]
                     
             # Crown
             if crown_val is not None:
-                if min_crown[0] is None or crown_val < min_crown[0]:
-                    min_crown = (crown_val, pk)
-                if max_crown[0] is None or crown_val > max_crown[0]:
-                    max_crown = (crown_val, pk)
+                if stats['min_crown'][0] is None or crown_val < stats['min_crown'][0]:
+                    stats['min_crown'] = [crown_val, pk]
+                if stats['max_crown'][0] is None or crown_val > stats['max_crown'][0]:
+                    stats['max_crown'] = [crown_val, pk]
                     
-        # Construct HTML
+        # Construct HTML con colores por rango
         style = """
         <style>
-            .summary-table { border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; font-size: 10px; margin-top: 20px; }
-            .summary-table th { background-color: #1a428a; color: white; padding: 8px; border: 1px solid #ddd; text-align: center; }
-            .summary-table td { padding: 8px; border: 1px solid #ddd; text-align: center; }
+            .summary-table { border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; font-size: 7px; margin-top: 10px; }
+            .summary-table th { background-color: #EF7F1A; color: white; padding: 3px; border: 1px solid #ddd; text-align: center; font-weight: bold; }
+            .summary-table td { padding: 3px; border: 1px solid #ddd; text-align: center; }
             .summary-table tr:nth-child(even) { background-color: #f8f9fa; }
-            .sub-header { background-color: #2b579a; font-size: 9px; }
+            .sub-header { background-color: #e6e6e6; font-size: 7px; }
             .sector-col { font-weight: bold; color: #2b579a; }
+            /* Colores por Rango - Revancha */
+            .rev-green { color: #2e7d32; font-weight: bold; }
+            .rev-yellow { color: #f57f17; font-weight: bold; }
+            .rev-red { color: #c62828; font-weight: bold; }
+            /* Colores por Rango - Ancho */
+            .ancho-green { color: #2e7d32; font-weight: bold; }
+            .ancho-yellow { color: #f57f17; font-weight: bold; }
+            .ancho-red { color: #c62828; font-weight: bold; }
         </style>
         """
         
@@ -2984,9 +3203,9 @@ class InteractiveProfileViewer(QDialog):
         html.append("<thead>")
         html.append("<tr>")
         html.append("<th rowspan='2' style='vertical-align: middle;'>SECTOR</th>")
-        html.append("<th colspan='2'>REVANCHA</th>")
-        html.append("<th colspan='2'>ANCHO</th>")
-        html.append("<th colspan='2'>CORONAMIENTO</th>")
+        html.append("<th colspan='2'>REVANCHA (m)</th>")
+        html.append("<th colspan='2'>ANCHO (m)</th>")
+        html.append("<th colspan='2'>CORONAMIENTO (m)</th>")
         html.append("</tr>")
         
         # Sub Headers
@@ -2999,27 +3218,55 @@ class InteractiveProfileViewer(QDialog):
         
         html.append("<tbody>")
         
-        # Data Row (Sector 1)
-        def fmt(val_tuple):
-            val, pk = val_tuple
-            if val is None: return "-"
-            return f"{val:.3f} ({pk})"
+        # Sort sectors
+        def sort_key(s):
+            # Try to extract number: "Sector 2" -> 2
+            try: return int(''.join(filter(str.isdigit, s)))
+            except: return s
             
-        html.append("<tr>")
-        html.append("<td class='sector-col'>Sector 1</td>")
+        sorted_sector_names = sorted(sectors_data.keys(), key=sort_key)
         
-        html.append(f"<td>{fmt(min_rev)}</td>")
-        html.append(f"<td>{fmt(max_rev)}</td>")
-        
-        html.append(f"<td>{fmt(min_ancho)}</td>")
-        html.append(f"<td>{fmt(max_ancho)}</td>")
-        
-        html.append(f"<td>{fmt(min_crown)}</td>")
-        html.append(f"<td>{fmt(max_crown)}</td>")
-        
-        html.append("</tr>")
+        def fmt(val_list, value_type='normal'):
+            """Formatea valor con PK, aplicando colores según tipo y rango"""
+            val, pk = val_list
+            if val is None: return "-"
+            
+            # Aplicar colores según tipo de valor
+            if value_type == 'revancha':
+                if val > 3.5:
+                    return f"<span class='rev-green'>{val:.3f}</span> ({pk})"
+                elif val >= 3.0:
+                    return f"<span class='rev-yellow'>{val:.3f}</span> ({pk})"
+                else:
+                    return f"<span class='rev-red'>{val:.3f}</span> ({pk})"
+            elif value_type == 'ancho':
+                if val > 18.0:
+                    return f"<span class='ancho-green'>{val:.3f}</span> ({pk})"
+                elif val >= 15.0:
+                    return f"<span class='ancho-yellow'>{val:.3f}</span> ({pk})"
+                else:
+                    return f"<span class='ancho-red'>{val:.3f}</span> ({pk})"
+            else:
+                return f"{val:.3f} ({pk})"
+
+        for sec_name in sorted_sector_names:
+            stats = sectors_data[sec_name]
+            
+            html.append("<tr>")
+            html.append(f"<td class='sector-col'>{sec_name}</td>")
+            
+            html.append(f"<td>{fmt(stats['min_rev'], 'revancha')}</td>")
+            html.append(f"<td>{fmt(stats['max_rev'], 'revancha')}</td>")
+            
+            html.append(f"<td>{fmt(stats['min_ancho'], 'ancho')}</td>")
+            html.append(f"<td>{fmt(stats['max_ancho'], 'ancho')}</td>")
+            
+            html.append(f"<td>{fmt(stats['min_crown'])}</td>")
+            html.append(f"<td>{fmt(stats['max_crown'])}</td>")
+            
+            html.append("</tr>")
+            
         html.append("</tbody></table>")
-        
         return "".join(html)
 
     def export_pdf_report(self):
@@ -3047,16 +3294,52 @@ class InteractiveProfileViewer(QDialog):
             if not filename:
                 return
 
-            # 3. Generate Assets (Chart & Tables)
+            # 🛑 VERIFICAR SI EL ARCHIVO ESTÁ BLOQUEADO (ABIERTO POR OTRO PROGRAMA)
+            if os.path.exists(filename):
+                try:
+                    with open(filename, 'ab'): pass
+                except PermissionError:
+                    QMessageBox.critical(self, "Error - Archivo Abierto", 
+                        f"El archivo PDF está abierto por otro programa:\n{filename}\n\n"
+                        "⚠️ Por favor, CIERRE el archivo PDF y vuelva a intentar.")
+                    return
+                except Exception as e:
+                    # Si falla la verificación por otra razón (ej: disco lleno, ruta inválida), avisar pero intentar continuar
+                    print(f"⚠️ Advertencia al verificar archivo: {e}")
+
+            # 3. Load Geomembrane Data (from CSV)
+            from .core.geomembrane_manager import GeomembraneManager
+            plugin_dir = os.path.dirname(__file__)
+            geo_manager = GeomembraneManager(plugin_dir)
+            wall_name = self.profiles_data[self.current_profile_index].get('wall_name', "Muro 1")
+            
+            # Check/Update CSV Data (Append missing PKs)
+            current_pks = [str(p.get('pk', '')) for p in self.profiles_data]
+            if geo_manager.ensure_data(wall_name, current_pks):
+                display_name = geo_manager.get_display_name(wall_name)
+                QMessageBox.information(
+                    self, 
+                    "Datos Faltantes Agregados", 
+                    f"Se ha actualizado el archivo de cotas en:\n{geo_manager.csv_path}\n\n"
+                    f"Se han agregado los PKs faltantes para '{display_name}'.\n"
+                    "Por favor, complete la columna 'Cota_Geomembrana' y vuelva a generar el reporte."
+                )
+                return
+
+            # 4. Generate Assets (Chart & Tables)
             import tempfile
+            
             temp_dir = tempfile.gettempdir()
             chart_path = os.path.join(temp_dir, "temp_profile_chart.png")
             
             if not self.generate_longitudinal_chart(chart_path):
                 QMessageBox.warning(self, "Aviso", "No se pudo generar el gráfico longitudinal.")
 
-            html_detail = self.generate_detail_html_table()
-            html_summary = self.generate_summary_html_table()
+            # 🎯 CONFIGURACIÓN: Altura del frame detail_table en el QPT (ajustar según tu layout)
+            DETAIL_FRAME_HEIGHT_MM = 220  # Cambiar este valor si ajustas el frame en el Layout Designer
+            
+            html_detail = self.generate_detail_html_table(geo_manager, frame_height_mm=DETAIL_FRAME_HEIGHT_MM)
+            html_summary = self.generate_summary_html_table(geo_manager)
             
             # 4. Load Template
             project = QgsProject.instance()
@@ -3079,26 +3362,175 @@ class InteractiveProfileViewer(QDialog):
                 layout.loadFromTemplate(doc, QgsReadWriteContext())
             
             # 5. Inject Content into Template Items
+            
+            # 📅 Extraer y establecer fecha y muro del DEM actual
+            try:
+                main_dialog = self.parent()
+                current_dem_path = getattr(main_dialog, 'dem_file_path', None)
+                
+                if current_dem_path:
+                    # Extraer nombre de archivo sin extensión
+                    dem_filename = os.path.splitext(os.path.basename(current_dem_path))[0]
+                    print(f"📁 Nombre DEM: {dem_filename}")
+                    
+                    # Formato esperado: DEM_MP_YYMMDD (ej: DEM_MP_260209 = 09-02-2026)
+                    # Estructura: DEM_[MURO]_[FECHA]
+                    parts = dem_filename.split('_')
+                    print(f"📊 Partes del nombre: {parts}")
+                    
+                    if len(parts) >= 3:
+                        # Extraer código de muro (MP, MO, ME)
+                        muro_code = parts[1]  # Segunda parte: MP, MO, o ME
+                        
+                        # Mapear código a nombre completo con "Revancha"
+                        muro_names = {
+                            'MP': 'Revancha Muro Principal',
+                            'MO': 'Revancha Muro Oeste',
+                            'ME': 'Revancha Muro Este'
+                        }
+                        muro_name = muro_names.get(muro_code.upper(), f'Revancha {muro_code}')
+                        
+                        # Inyectar en layout si existe muro_label
+                        muro_label = layout.itemById('muro_label')
+                        if muro_label and isinstance(muro_label, QgsLayoutItemLabel):
+                            muro_label.setText(muro_name)
+                            print(f"✅ Muro inyectado en 'muro_label': {muro_name}")
+                        else:
+                            print(f"⚠️ No se encontró 'muro_label' en el layout (opcional)")
+                        
+                        # Extraer fecha (última parte)
+                        date_str = parts[2]  # Tercera parte: YYMMDD
+                        
+                        if len(date_str) >= 6:
+                            try:
+                                # Parsear YYMMDD
+                                yy = int(date_str[0:2])
+                                mm = int(date_str[2:4])
+                                dd = int(date_str[4:6])
+                                
+                                # Convertir YY a año completo (asumiendo 20XX)
+                                yyyy = 2000 + yy
+                                
+                                # Formatear como DD-MM-YYYY
+                                formatted_date = f"{dd:02d}-{mm:02d}-{yyyy}"
+                                print(f"📅 Fecha formateada: {formatted_date}")
+                                
+                                # Inyectar en layout - Buscar date_label
+                                print(f"🔍 Buscando 'date_label' en layout...")
+                                date_label = layout.itemById('date_label')
+                                print(f"   Resultado búsqueda: {date_label}")
+                                print(f"   Tipo: {type(date_label)}")
+                                
+                                if date_label:
+                                    if isinstance(date_label, QgsLayoutItemLabel):
+                                        date_label.setText(f"Fecha: {formatted_date}")
+                                        print(f"✅ Fecha inyectada en 'date_label': {formatted_date}")
+                                    else:
+                                        print(f"⚠️ 'date_label' encontrado pero no es QgsLayoutItemLabel, es: {type(date_label)}")
+                                else:
+                                    print("❌ No se encontró 'date_label' en el layout")
+                                    # Listar todos los items del layout para debug
+                                    print("📋 Items disponibles en layout:")
+                                    for item in layout.items():
+                                        if hasattr(item, 'id'):
+                                            print(f"   - {item.id()} ({type(item).__name__})")
+                            except (ValueError, IndexError) as e:
+                                print(f"⚠️ Error parseando fecha del DEM: {e}")
+                        else:
+                            print(f"⚠️ Fecha muy corta en nombre DEM: {date_str}")
+                    else:
+                        print(f"⚠️ Formato de nombre DEM no esperado (esperado: DEM_MURO_FECHA): {dem_filename}")
+                else:
+                    print("⚠️ No se encontró path del DEM actual")
+            except Exception as e:
+                print(f"❌ Error extrayendo fecha/muro del DEM: {e}")
+                import traceback
+                traceback.print_exc()
+            
             # Chart
             chart_item = layout.itemById('chart')
             if chart_item and isinstance(chart_item, QgsLayoutItemPicture):
                 chart_item.setPicturePath(chart_path)
+            
+            # Map Generation (NEW)
+            try:
+                # Recuperar datos del diálogo principal
+                main_dialog = self.parent()
+                current_dem = getattr(main_dialog, 'dem_file_path', None)
+                prev_dem = getattr(main_dialog, 'previous_dem_file_path', None)
+                wall_name = getattr(main_dialog, 'selected_wall', "Muro 1")
+                
+                if current_dem and prev_dem and self.ecw_file_path:
+                    map_path = os.path.join(temp_dir, "temp_wall_map.png")
+                    
+                    # Importar generador
+                    from .core.map_generator import MapGenerator
+                    # profile_viewer_dialog está en root, así que dirname es el root del plugin
+                    plugin_root = os.path.dirname(__file__)
+                    map_gen = MapGenerator(plugin_root)
+                    
+                    print(f"🗺️ Generando mapa para reporte: {wall_name}")
+                    if map_gen.generate_map_image(wall_name, self.ecw_file_path, current_dem, prev_dem, map_path):
+                        # Inyectar en layout
+                        map_item = layout.itemById('main_map')
+                        if map_item and isinstance(map_item, QgsLayoutItemPicture):
+                            map_item.setPicturePath(map_path)
+                            print(f"✅ Mapa inyectado en item 'main_map': {map_path}")
+                        else:
+                            print("⚠️ No se encontró item 'main_map' en el layout o no es una imagen")
+                    else:
+                        print("❌ Falló la generación del mapa para el reporte")
+            except Exception as e:
+                print(f"❌ Error intentando generar mapa para reporte: {e}")
+                # No interrumpimos el reporte si falla el mapa, solo log
             
             # Summary Table (Fix: Handle Frames for HTML)
             summary_frame = layout.itemById('summary_table')
             if summary_frame and isinstance(summary_frame, QgsLayoutFrame):
                 summary_mf = summary_frame.multiFrame()
                 if isinstance(summary_mf, QgsLayoutItemHtml):
-                    summary_mf.setHtml(html_summary)
+                    # Wrap in proper HTML structure
+                    final_summary_html = f"<html><head><meta charset='UTF-8'></head><body>{html_summary}</body></html>"
+                    print(f"📊 Injecting Summary Table (Length: {len(final_summary_html)})")
+                    
+                    summary_mf.setContentMode(QgsLayoutItemHtml.ManualHtml)
+                    summary_mf.setHtml(final_summary_html)
                     summary_mf.loadHtml()
+                else:
+                    print(f"⚠️ summary_table no es QgsLayoutItemHtml: {type(summary_mf)}")
+            else:
+                print(f"⚠️ summary_table no encontrado o no es Frame: {type(summary_frame)}")
                 
             # Detail Table (Fix: Handle Frames for HTML)
             detail_frame = layout.itemById('detail_table')
             if detail_frame and isinstance(detail_frame, QgsLayoutFrame):
                 detail_mf = detail_frame.multiFrame()
                 if isinstance(detail_mf, QgsLayoutItemHtml):
-                    detail_mf.setHtml(html_detail)
+                    # Wrap in proper HTML structure
+                    final_detail_html = f"<html><head><meta charset='UTF-8'></head><body>{html_detail}</body></html>"
+                    print(f"📊 Injecting Detail Table (Length: {len(final_detail_html)})")
+                    
+                    detail_mf.setContentMode(QgsLayoutItemHtml.ManualHtml)
+                    detail_mf.setHtml(final_detail_html)
                     detail_mf.loadHtml()
+                else:
+                    print(f"⚠️ detail_table no es QgsLayoutItemHtml: {type(detail_mf)}")
+            else:
+                print(f"⚠️ detail_table no encontrado o no es Frame: {type(detail_frame)}")
+
+            # CRITICAL: Force HTML processing before export
+            # HTML tables need time to render, otherwise they appear blank in PDF
+            print("⏳ Procesando HTML de tablas...")
+            QApplication.processEvents()  # Process pending UI events
+            
+            # Wait for HTML to fully load (QGIS async rendering)
+            import time
+            time.sleep(1.0)  # 1000ms - increased from 500ms for better reliability
+            
+            # Force layout refresh
+            layout.refresh()
+            QApplication.processEvents()  # Process refresh events
+            print("✅ HTML procesado, continuando con export...")
 
             # 6. Dynamic Screenshots (Pages 2+)
             # Detect Alerts
@@ -3129,93 +3561,244 @@ class InteractiveProfileViewer(QDialog):
                     alert_profiles.append(pk)
             
             if alert_profiles:
-                # Add new pages for screenshots
-                # Grid settings
-                rows = 2
-                cols = 2
-                per_page = rows * cols
+                print(f"📸 Detectadas {len(alert_profiles)} alertas, generando screenshots...")
                 
-                # Current Y position tracking for new pages
-                # We need to extend the layout
-                # layout.pageCollection().extend(num_pages) matches existing page size
+                # ENHANCED SYSTEM:
+                # - Screenshots 1-4: Page 3 (alert_screenshot_1 to alert_screenshot_4)
+                # - Screenshots 5-8: Page 4 (alert_screenshot_5 to alert_screenshot_8)
+                # - Screenshots 9-12: Page 5 (alert_screenshot_9 to alert_screenshot_12)
+                # - Screenshots 13+: Dynamic pages with 2×2 grid (starting from page 6)
                 
-                import math
-                num_pages_needed = math.ceil(len(alert_profiles) / per_page)
+                # Step 1: Use QPT elements for first 12 screenshots (pages 3-5)
+                qpt_screenshot_ids = [
+                    'alert_screenshot_1', 'alert_screenshot_2', 'alert_screenshot_3', 'alert_screenshot_4',  # Page 3
+                    'alert_screenshot_5', 'alert_screenshot_6', 'alert_screenshot_7', 'alert_screenshot_8',  # Page 4
+                    'alert_screenshot_9', 'alert_screenshot_10', 'alert_screenshot_11', 'alert_screenshot_12'  # Page 5
+                ]
                 
-                for i in range(num_pages_needed):
-                    page = layout.pageCollection().extend(1)[0] # Add 1 page
+                screenshots_placed = 0
+                
+                for i, pk in enumerate(alert_profiles[:12]):  # Max 12 for QPT (pages 3-5)
+                    # Check if QPT element exists
+                    item_id = qpt_screenshot_ids[i]
+                    qpt_item = layout.itemById(item_id)
                     
-                    # Add Title for this page (FIX: Use QgsLayoutFrame + QgsLayoutItemHtml)
-                    title_mf = QgsLayoutItemHtml(layout)
-                    title_mf.setHtml(f"<h2 style='font-family: Arial; color: #d32f2f;'>Perfiles con Alertas (Página {i+1})</h2>")
-                    layout.addMultiFrame(title_mf)
-                    
-                    title_frame = QgsLayoutFrame(layout, title_mf)
-                    title_frame.attemptResize(QgsLayoutSize(280, 15, QgsUnitTypes.LayoutMillimeters))
-                    
-                    # Calculate position: Page Height * (Original Pages + i) + Margin
-                    # Default A4 Height is 210mm. Template is page 0. Extent adds to end.
-                    # We need absolute position.
-                    # Note: 'page' object has pos().y() but it might be easier to calculate
-                    page_y_offset = (i + 1) * 297 # A4 Height is 297mm (Portrait) or 210mm (Landscape)?
-                    # Asssuming A4 Landscape (297x210) based on width usage?
-                    # Wait, QGIS layout coordinates are continuous.
-                    # The template page size dictates the interval.
-                    # Let's assume standard A4 Landscape (297mm width, 210mm height).
-                    page_height = layout.pageCollection().page(0).pageSize().height()
-                    page_y_offset = (i + 1) * page_height
-                    
-                    title_frame.attemptMove(QgsLayoutPoint(10, page_y_offset + 10, QgsUnitTypes.LayoutMillimeters))
-                    layout.addLayoutItem(title_frame)
-                    
-                    # Add Screenshots
-                    start_idx = i * per_page
-                    end_idx = min(start_idx + per_page, len(alert_profiles))
-                    
-                    page_profiles = alert_profiles[start_idx:end_idx]
-                    
-                    for idx, pk in enumerate(page_profiles):
-                        # Generate Screenshot
-                        # 1. Switch profile
+                    if qpt_item and isinstance(qpt_item, QgsLayoutItemPicture):
+                        # Generate screenshot
                         self.current_pk = pk
-                        # Find index
                         for p_idx, p in enumerate(self.profiles_data):
                             if str(p.get('pk')) == pk:
                                 self.current_profile_index = p_idx
                                 break
-                        self.update_profile_display()
-                        QApplication.processEvents() # Ensure redraw
+                        self.update_profile_display(export_mode=True)
+                        QApplication.processEvents()
                         
-                        # 2. Save Image
+                        # Save and inject
                         screenshot_path = os.path.join(temp_dir, f"alert_{pk.replace('+','_')}.png")
                         self.figure.savefig(screenshot_path)
+                        qpt_item.setPicturePath(screenshot_path)
                         
-                        # 3. Add to layout
-                        # Grid logic
-                        row = idx // cols
-                        col = idx % cols
+                        # Determine page number for logging
+                        page_num = 3 + (i // 4)  # Page 3 for 0-3, Page 4 for 4-7, Page 5 for 8-11
+                        print(f"✅ Screenshot {i+1}/12 inyectado en QPT Página {page_num}: {item_id}")
+                        screenshots_placed += 1
+                    else:
+                        print(f"⚠️ Elemento QPT '{item_id}' no encontrado o no es Picture")
+                        # Continue trying other elements instead of breaking
+                
+                # Step 2: Create dynamic pages ONLY for alerts beyond 12 (starting from page 6)
+                remaining_alerts = alert_profiles[screenshots_placed:]
+                
+                if remaining_alerts:
+                    print(f"📄 Creando páginas dinámicas para {len(remaining_alerts)} alertas restantes...")
+                    
+                    # Grid settings
+                    rows = 2
+                    cols = 2
+                    per_page = rows * cols
+                    
+                    import math
+                    from qgis.core import QgsLayoutItemPage
+                    num_pages_needed = math.ceil(len(remaining_alerts) / per_page)
+                    
+                    # Get current page count (should be 2: page 1 for tables, page 2 for map)
+                    current_page_count = layout.pageCollection().pageCount()
+                    
+                    # Safety check: Ensure we have at least one page to copy size from
+                    if current_page_count == 0:
+                        print("⚠️ Error crítico: El layout no tiene páginas. No se pueden generar capturas dinámicas.")
+                        base_page_size = None # Skip loop
+                        num_pages_needed = 0 # Skip loop
+                    else:
+                        base_page_size = layout.pageCollection().page(0).pageSize()
+                    
+                    for page_idx in range(num_pages_needed):
+                        # Create new page
+                        new_page = QgsLayoutItemPage(layout)
+                        new_page.setPageSize(base_page_size)
+                        layout.pageCollection().addPage(new_page)
                         
-                        w = 130 # mm
-                        h = 80  # mm
-                        x = 10 + (col * 140)
-                        y = 30 + (row * 90) + page_y_offset
+                        # Calculate Y offset (page 3+ = index 2+)
+                        page_height = layout.pageCollection().page(0).pageSize().height()
+                        page_number = current_page_count + page_idx  # 2, 3, 4...
+                        page_y_offset = page_number * page_height
                         
-                        pic = QgsLayoutItemPicture(layout)
-                        pic.setPicturePath(screenshot_path)
-                        pic.attemptResize(QgsLayoutSize(w, h, QgsUnitTypes.LayoutMillimeters))
-                        pic.attemptMove(QgsLayoutPoint(x, y, QgsUnitTypes.LayoutMillimeters))
-                        layout.addLayoutItem(pic)
+                        # Add title
+                        title_mf = QgsLayoutItemHtml(layout)
+                        title_mf.setHtml(f"<h2 style='font-family: Arial; color: #d32f2f;'>Perfiles con Alertas (Página {page_number + 1})</h2>")
+                        layout.addMultiFrame(title_mf)
                         
-                        # Label (FIX: Use QgsLayoutFrame + QgsLayoutItemHtml)
-                        lbl_mf = QgsLayoutItemHtml(layout)
-                        lbl_mf.setHtml(f"<h3 style='font-family: Arial;'>PK: {pk}</h3>")
-                        layout.addMultiFrame(lbl_mf)
+                        title_frame = QgsLayoutFrame(layout, title_mf)
+                        title_frame.attemptResize(QgsLayoutSize(280, 15, QgsUnitTypes.LayoutMillimeters))
+                        title_frame.attemptMove(QgsLayoutPoint(10, page_y_offset + 10, QgsUnitTypes.LayoutMillimeters))
+                        layout.addLayoutItem(title_frame)
                         
-                        lbl_frame = QgsLayoutFrame(layout, lbl_mf)
-                        lbl_frame.attemptResize(QgsLayoutSize(w, 10, QgsUnitTypes.LayoutMillimeters))
-                        lbl_frame.attemptMove(QgsLayoutPoint(x, y - 10, QgsUnitTypes.LayoutMillimeters))
-                        layout.addLayoutItem(lbl_frame)
-
+                        # Add screenshots for this page
+                        start_idx = page_idx * per_page
+                        end_idx = min(start_idx + per_page, len(remaining_alerts))
+                        page_alerts = remaining_alerts[start_idx:end_idx]
+                        
+                        for idx, pk in enumerate(page_alerts):
+                            # Generate screenshot
+                            self.current_pk = pk
+                            for p_idx, p in enumerate(self.profiles_data):
+                                if str(p.get('pk')) == pk:
+                                    self.current_profile_index = p_idx
+                                    break
+                            self.update_profile_display(export_mode=True)
+                            QApplication.processEvents()
+                            
+                            screenshot_path = os.path.join(temp_dir, f"alert_{pk.replace('+','_')}.png")
+                            self.figure.savefig(screenshot_path)
+                            
+                            # Grid positioning
+                            row = idx // cols
+                            col = idx % cols
+                            
+                            w = 130  # mm
+                            h = 80   # mm
+                            x = 10 + (col * 140)
+                            y = 30 + (row * 90) + page_y_offset
+                            
+                            # Add picture
+                            pic = QgsLayoutItemPicture(layout)
+                            pic.setPicturePath(screenshot_path)
+                            pic.attemptResize(QgsLayoutSize(w, h, QgsUnitTypes.LayoutMillimeters))
+                            pic.attemptMove(QgsLayoutPoint(x, y, QgsUnitTypes.LayoutMillimeters))
+                            layout.addLayoutItem(pic)
+                            
+                            # Add label
+                            lbl_mf = QgsLayoutItemHtml(layout)
+                            lbl_mf.setHtml(f"<h3 style='font-family: Arial;'>PK: {pk}</h3>")
+                            layout.addMultiFrame(lbl_mf)
+                            
+                            lbl_frame = QgsLayoutFrame(layout, lbl_mf)
+                            lbl_frame.attemptResize(QgsLayoutSize(w, 10, QgsUnitTypes.LayoutMillimeters))
+                            lbl_frame.attemptMove(QgsLayoutPoint(x, y - 10, QgsUnitTypes.LayoutMillimeters))
+                            layout.addLayoutItem(lbl_frame)
+                    
+                    print(f"✅ Creadas {num_pages_needed} páginas dinámicas (páginas {current_page_count + 1} a {current_page_count + num_pages_needed})")
+            else:
+                # 🔥 NO HAY ALERTAS: Eliminar página 3 del layout (si existe)
+                print("📊 No se detectaron alertas - verificando si existe página 3 para eliminarla...")
+                
+                # Obtener número de páginas en el layout cargado desde QPT
+                page_collection = layout.pageCollection()
+                total_pages = page_collection.pageCount()
+                
+                print(f"   Layout tiene {total_pages} páginas iniciales")
+                
+                # Si hay 3 o más páginas, eliminar desde la página 3 en adelante
+                # (Página 0 = primera, Página 1 = segunda, Página 2 = tercera)
+                if total_pages >= 3:
+                    # Eliminar páginas desde la última hacia atrás para evitar problemas de índice
+                    pages_to_remove = []
+                    for page_idx in range(2, total_pages):  # Índices 2, 3, 4, ...
+                        pages_to_remove.append(page_idx)
+                    
+                    # Eliminar en orden inverso
+                    for page_idx in reversed(pages_to_remove):
+                        page_to_remove = page_collection.page(page_idx)
+                        if page_to_remove:
+                            # Primero eliminar todos los items que estén en esa página
+                            items_to_remove = []
+                            for item in layout.items():
+                                if hasattr(item, 'page') and item.page() == page_idx:
+                                    items_to_remove.append(item)
+                            
+                            # Remover items
+                            for item in items_to_remove:
+                                layout.removeLayoutItem(item)
+                            
+                            # Ahora remover la página
+                            page_collection.deletePage(page_idx)
+                            print(f"   ✅ Página {page_idx + 1} eliminada (sin alertas)")
+                    
+                    print(f"   Layout final tiene {page_collection.pageCount()} páginas")
+                else:
+                    print(f"   Layout solo tiene {total_pages} páginas, no hay página 3 que eliminar")
+            
+            # 🆕 ELIMINAR PÁGINAS VACÍAS DESPUÉS DE INYECTAR SCREENSHOTS
+            # Si hay alertas pero no se llenaron todas las páginas QPT (3-5), eliminar las vacías
+            if alert_profiles:
+                num_alerts = len(alert_profiles)
+                page_collection = layout.pageCollection()
+                
+                # Determinar qué páginas eliminar según cantidad de alertas
+                pages_to_delete = []
+                
+                if num_alerts <= 4:
+                    # Solo usar página 3, eliminar 4 y 5 si existen
+                    pages_to_delete = [3, 4]  # Índices de página (0-based, entonces páginas 4 y 5)
+                    print(f"📋 {num_alerts} alertas (1-4) - Eliminando páginas 4 y 5 si existen")
+                elif num_alerts <= 8:
+                    # Usar páginas 3-4, eliminar 5 si existe
+                    pages_to_delete = [4]  # Índice de página 5
+                    print(f"📋 {num_alerts} alertas (5-8) - Eliminando página 5 si existe")
+                else:
+                    # 9-12 alertas: Usar todas las páginas QPT (3-5), no eliminar nada
+                    print(f"📋 {num_alerts} alertas (9-12) - Usando todas las páginas QPT")
+                
+                # Eliminar páginas identificadas (en orden inverso)
+                for page_idx in reversed(pages_to_delete):
+                    if page_idx < page_collection.pageCount():
+                        page = page_collection.page(page_idx)
+                        if page:
+                            # Eliminar items de la página
+                            items_to_remove = [item for item in layout.items() 
+                                             if hasattr(item, 'page') and item.page() == page_idx]
+                            for item in items_to_remove:
+                                layout.removeLayoutItem(item)
+                            
+                            # Eliminar página
+                            page_collection.deletePage(page_idx)
+                            print(f"   ✅ Página {page_idx + 1} eliminada (vacía)")
+            
+            # 🆕 Generate Longitudinal Chart (Before Export)
+            try:
+                from .core.report_generator import ReportGenerator
+                # Ensure plugin_root is available (it was defined at start of method)
+                report_gen = ReportGenerator(plugin_root, self.profiles_data, self.saved_measurements)
+                
+                chart_path = os.path.join(temp_dir, "longitudinal_profile.png")
+                print(f"📊 Intentando generar gráfico en: {chart_path}")
+                
+                if report_gen.generate_longitudinal_chart(chart_path):
+                    # Use confirmed ID 'chart'
+                    chart_item = layout.itemById('chart')
+                        
+                    if chart_item and isinstance(chart_item, QgsLayoutItemPicture):
+                        chart_item.setPicturePath(chart_path)
+                        print(f"✅ Gráfico longitudinal inyectado en item '{chart_item.id()}'")
+                    else:
+                        print(f"⚠️ Item 'chart' no encontrado o no es Picture. Verifique el Layout.")
+                        logger.warning(f"Chart Item ID 'chart' not found in layout or is not QgsLayoutItemPicture.")
+                else:
+                    print(f"❌ Falló generate_longitudinal_chart (ver logs anteriores)")
+            except Exception as e:
+                print(f"❌ Error crítico generando gráfico: {e}")
+                import traceback
+                traceback.print_exc()
 
             # 7. Export
             exporter = QgsLayoutExporter(layout)
