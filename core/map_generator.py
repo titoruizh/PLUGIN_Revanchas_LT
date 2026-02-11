@@ -15,7 +15,8 @@ from qgis.core import (
     QgsRasterShader, QgsSingleSymbolRenderer, QgsSymbol,
     QgsSimpleFillSymbolLayer, QgsRasterBandStats,
     QgsLayoutItemScaleBar, QgsLayoutItemLabel, QgsApplication,
-    QgsLayoutMeasurement
+    QgsLayoutMeasurement, QgsPalLayerSettings, QgsTextFormat,
+    QgsTextBufferSettings, QgsVectorLayerSimpleLabeling
 )
 from qgis.PyQt.QtGui import QColor, QFont
 from qgis.PyQt.QtCore import Qt
@@ -93,7 +94,9 @@ class MapGenerator:
                           ortho_path, 
                           current_dem_path, 
                           previous_dem_path, 
-                          output_path):
+                          output_path,
+                          custom_min=None,
+                          custom_max=None):
         """
         Genera una imagen de mapa completa con rotación, leyenda, escala y flecha norte.
         """
@@ -176,7 +179,7 @@ class MapGenerator:
                 clipped_diff_layer = diff_layer
             
             # E. Estilizar Diferencia (Mapa de Calor)
-            min_val, max_val = self._apply_heatmap_style(clipped_diff_layer)
+            min_val, max_val = self._apply_heatmap_style(clipped_diff_layer, custom_min, custom_max)
             
             # 2. Crear Layout
             project = QgsProject.instance()
@@ -308,11 +311,55 @@ class MapGenerator:
                 sym_layer.setWidth(0.5)
                 
         layer.setRenderer(QgsSingleSymbolRenderer(symbol))
+        
+        # 🆕 ETIQUETADO DE SECTORES (Mismo color rojo)
+        try:
+            settings = QgsPalLayerSettings()
+            
+            # Intentar usar el campo "Layer" o "Text" si existen
+            field_name = "Layer" # Default para DXF importado
+            
+            # Verificar campos del layer
+            fields = [f.name() for f in layer.fields()]
+            if "Text" in fields:
+                field_name = "Text"
+            elif "Label" in fields:
+                field_name = "Label"
+                
+            settings.fieldName = field_name
+            settings.isExpression = False
+            
+            # Formato de texto
+            text_format = QgsTextFormat()
+            text_format.setFont(QFont("Arial", 10, QFont.Bold))
+            text_format.setColor(QColor(180, 0, 0))  # Rojo oscuro match sectores
+            
+            # Buffer (borde blanco para legibilidad)
+            buffer = QgsTextBufferSettings()
+            buffer.setEnabled(True)
+            buffer.setSize(1.0)
+            buffer.setColor(QColor("white"))
+            buffer.setOpacity(0.7)
+            text_format.setBuffer(buffer)
+            
+            settings.setFormat(text_format)
+            
+            # Ubicación
+            settings.placement = QgsPalLayerSettings.OverPoint
+            
+            # Habilitar
+            layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))
+            layer.setLabelsEnabled(True)
+            print(f"✅ Etiquetado habilitado para sectores usando campo '{field_name}'")
+            
+        except Exception as e:
+            print(f"⚠️ Error configurando etiquetas para sectores: {e}")
 
     def _add_color_legend(self, layout, min_val, max_val):
         """Agregar leyenda de colores visual (barra de gradiente) al lado izquierdo"""
         from qgis.core import QgsLayoutItemShape
         from qgis.PyQt.QtCore import QRectF
+        import math
         
         # Configuración de la barra
         bar_x = 5      # Posición X
@@ -320,14 +367,21 @@ class MapGenerator:
         bar_width = 10 # Ancho de la barra
         bar_height = 120 # Alto total de la barra
         
-        # Crear segmentos de color (de arriba = max a abajo = min)
-        # Colores: Rojo (positivo/relleno) -> Amarillo -> Verde -> Azul (negativo/corte)
+        # Definir colores (Estilo Global Mapper)
+        # Max (Arriba) -> Min (Abajo)
+        c_blue = QColor(0, 0, 255)       # Azul
+        c_green = QColor(0, 255, 50)     # Verde
+        c_yellow = QColor(255, 255, 0)   # Amarillo
+        c_orange = QColor(255, 128, 0)   # Naranja
+        c_red = QColor(255, 0, 0)        # Rojo
+        
+        # Stops normalizados (0.0=Top=Max, 1.0=Bottom=Min)
         color_stops = [
-            (0.0, QColor(202, 0, 32)),      # Rojo (top = max)
-            (0.25, QColor(255, 150, 50)),   # Naranja
-            (0.5, QColor(255, 255, 150)),   # Amarillo claro
-            (0.75, QColor(150, 220, 180)),  # Verde claro
-            (1.0, QColor(5, 113, 176))      # Azul (bottom = min)
+            (0.0, c_red),       # Top: Rojo
+            (0.20, c_orange),   # 80% del valor
+            (0.55, c_yellow),   # 45% del valor
+            (0.85, c_green),    # 15% del valor (Transición rápida al azul abajo)
+            (1.0, c_blue)       # Bottom: Azul
         ]
         
         num_segments = 20  # Más segmentos = gradiente más suave
@@ -358,22 +412,84 @@ class MapGenerator:
         # Agregar etiquetas de valores a la derecha de la barra
         label_x = bar_x + bar_width + 2
         
-        # Valores a mostrar (max, 0.75*max, 0.5*max, 0.25*max, 0, min)
-        label_positions = [
-            (0.0, max_val),
-            (0.25, max_val * 0.75),
-            (0.5, max_val * 0.5 if max_val > 0 else 0),
-            (0.75, max_val * 0.25 if max_val > 0 else min_val * 0.5),
-            (1.0, min_val)
-        ]
+        # -----------------------------------------------------
+        # CÁLCULO DE "NICE NUMBERS" PARA ETIQUETAS
+        # -----------------------------------------------------
+        rango = max_val - min_val
+        if rango <= 0: rango = 0.1
         
-        for t, val in label_positions:
+        # Determinar paso ideal (aprox. 5 divisiones)
+        rough_step = rango / 4.0
+        
+        # Encontrar magnitud (potencia de 10)
+        magnitude = 10 ** math.floor(math.log10(rough_step))
+        residual = rough_step / magnitude
+        
+        # Elegir paso "bonito" (1, 2, 5, etc.)
+        if residual > 5:
+            step = 10 * magnitude
+        elif residual > 2:
+            step = 5 * magnitude
+        elif residual > 1:
+            step = 2 * magnitude
+        else:
+            step = 1 * magnitude
+            
+        # Generar lista de valores
+        # Empezar en el primer múltiplo de 'step' >= min_val
+        start_val = math.ceil(min_val / step) * step
+        
+        labels = []
+        # Siempre incluir el MAX exacto y MIN exacto para referencia
+        labels.append(max_val)
+        
+        current_val = start_val
+        while current_val < max_val:
+            # Evitar superposición con max_val si está muy cerca
+            if abs(current_val - max_val) > (step * 0.2):
+                labels.append(current_val)
+            current_val += step
+            
+        # Incluir min_val si no está cerca del último generado
+        # (Nota: labels se generan de abajo hacia arriba en el while, pero aquí el orden no importa
+        # porque calcularemos su posición 't')
+        if abs(labels[-1] - min_val) > (step * 0.2) and min_val not in labels:
+             labels.append(min_val)
+             
+        # Eliminar duplicados y ordenar descendente (Max arriba)
+        labels = sorted(list(set(labels)), reverse=True)
+        
+        for val in labels:
+            # Calcular posición t (0=Max, 1=Min)
+            # t = (max - val) / (max - min)
+            if abs(max_val - min_val) < 0.0001:
+                t = 0.5
+            else:
+                t = (max_val - val) / (max_val - min_val)
+            
+            # Dibujar etiqueta
             label = QgsLayoutItemLabel(layout)
             label.setText(f"{val:.2f} m")
             label.setFont(QFont("Arial", 7))
-            label.attemptMove(QgsLayoutPoint(label_x, bar_y + t * bar_height - 2, QgsUnitTypes.LayoutMillimeters))
+            
+            # Ajustar posición Y basada en t
+            y_pos = bar_y + (t * bar_height) - 3 # -3 para centrar verticalmente respecto a la línea
+            
+            label.attemptMove(QgsLayoutPoint(label_x, y_pos, QgsUnitTypes.LayoutMillimeters))
             label.attemptResize(QgsLayoutSize(25, 6, QgsUnitTypes.LayoutMillimeters))
             layout.addLayoutItem(label)
+            
+            # Agregar pequeña marca/tick visual
+            tick = QgsLayoutItemShape(layout)
+            tick.setShapeType(QgsLayoutItemShape.Rectangle)
+            tick.attemptMove(QgsLayoutPoint(bar_x + bar_width, bar_y + (t * bar_height), QgsUnitTypes.LayoutMillimeters))
+            tick.attemptResize(QgsLayoutSize(1.5, 0.2, QgsUnitTypes.LayoutMillimeters)) # Tick pequeño
+            # Tick negro
+            symbol = tick.symbol()
+            if symbol and symbol.symbolLayerCount() > 0:
+                symbol.symbolLayer(0).setColor(QColor(0,0,0))
+                symbol.symbolLayer(0).setStrokeStyle(Qt.NoPen)
+            layout.addLayoutItem(tick)
     
     def _interpolate_color(self, t, color_stops):
         """Interpola color en gradiente definido por stops"""
@@ -391,18 +507,21 @@ class MapGenerator:
         return color_stops[-1][1]
 
     def _add_scale_bar(self, layout, map_item):
-        """Agregar barra de escala arriba a la derecha"""
+        """Agregar barra de escala - Mover abajo a la izquierda"""
         scale_bar = QgsLayoutItemScaleBar(layout)
         scale_bar.setLinkedMap(map_item)
         scale_bar.setStyle('Single Box')
         scale_bar.setUnits(QgsUnitTypes.DistanceMeters)
-        scale_bar.setNumberOfSegments(4)
+        scale_bar.setNumberOfSegments(2) # Reducir segmentos para que sea más corta
         scale_bar.setNumberOfSegmentsLeft(0)
-        scale_bar.setUnitsPerSegment(125)  # 125m por segmento
+        scale_bar.setUnitsPerSegment(100)  # 100m por segmento
         scale_bar.setUnitLabel("m")
         scale_bar.setFont(QFont("Arial", 8))
-        scale_bar.attemptMove(QgsLayoutPoint(167, 5, QgsUnitTypes.LayoutMillimeters))  # Ajustado a la izquierda
-        scale_bar.attemptResize(QgsLayoutSize(80, 8, QgsUnitTypes.LayoutMillimeters))
+        
+        # Posición: Abajo a la izquierda, evitando la leyenda de colores (x=15 max)
+        # Mover más cerca de la leyenda (x=22) y alineado con texto superficies (y=138)
+        scale_bar.attemptMove(QgsLayoutPoint(22, 138, QgsUnitTypes.LayoutMillimeters))
+        scale_bar.attemptResize(QgsLayoutSize(35, 8, QgsUnitTypes.LayoutMillimeters))
         layout.addLayoutItem(scale_bar)
 
     def _add_north_arrow(self, layout, map_rotation):
@@ -434,10 +553,9 @@ class MapGenerator:
         north_label.attemptMove(QgsLayoutPoint(x_pos, y_pos, QgsUnitTypes.LayoutMillimeters))
         north_label.attemptResize(QgsLayoutSize(width, height, QgsUnitTypes.LayoutMillimeters))
         
-        # Fondo blanco semitransparente para contraste (sin marco)
-        north_label.setBackgroundEnabled(True)
-        north_label.setBackgroundColor(QColor(255, 255, 255, 200))  # Blanco con 78% opacidad
-        north_label.setFrameEnabled(False)  # Sin marco para evitar cuadrado negro
+        # Fondo TRANSPARENTE (sin cuadro blanco)
+        north_label.setBackgroundEnabled(False)
+        north_label.setFrameEnabled(False)
         
         # Rotar la flecha para compensar la rotación del mapa
         north_label.setItemRotation(map_rotation)
@@ -453,25 +571,28 @@ class MapGenerator:
         previous_name = os.path.splitext(os.path.basename(previous_dem_path))[0] if previous_dem_path else "N/A"
         
         # Posición: abajo a la derecha del mapa
-        x_pos = 175  # Alineado con barra de escala
+        # Queremos que termine cerca del borde derecho (aprox 275mm)
+        # x_pos = 275 - 120 (ancho) = 155
+        x_pos = 155 
         y_pos = 135  # Cerca del borde inferior (página tiene 150mm de alto)
+        width = 120
         
-        # Etiqueta 1: Superficie actual
+        # Etiqueta 1: Superficie actual - 🆕 NEGRITA
         label1 = QgsLayoutItemLabel(layout)
         label1.setText(f"Superficie: {current_name}")
-        label1.setFont(QFont("Arial", 8))
+        label1.setFont(QFont("Arial", 8, QFont.Bold))
         label1.attemptMove(QgsLayoutPoint(x_pos, y_pos, QgsUnitTypes.LayoutMillimeters))
-        label1.attemptResize(QgsLayoutSize(115, 5, QgsUnitTypes.LayoutMillimeters))
-        label1.setHAlign(Qt.AlignLeft)
+        label1.attemptResize(QgsLayoutSize(width, 5, QgsUnitTypes.LayoutMillimeters))
+        label1.setHAlign(Qt.AlignRight) # Alineado a la derecha
         layout.addLayoutItem(label1)
         
-        # Etiqueta 2: Superficie comparación
+        # Etiqueta 2: Superficie comparación - 🆕 NEGRITA
         label2 = QgsLayoutItemLabel(layout)
         label2.setText(f"Superficie comparación: {previous_name}")
-        label2.setFont(QFont("Arial", 8))
+        label2.setFont(QFont("Arial", 8, QFont.Bold))
         label2.attemptMove(QgsLayoutPoint(x_pos, y_pos + 5, QgsUnitTypes.LayoutMillimeters))
-        label2.attemptResize(QgsLayoutSize(115, 5, QgsUnitTypes.LayoutMillimeters))
-        label2.setHAlign(Qt.AlignLeft)
+        label2.attemptResize(QgsLayoutSize(width, 5, QgsUnitTypes.LayoutMillimeters))
+        label2.setHAlign(Qt.AlignRight) # Alineado a la derecha
         layout.addLayoutItem(label2)
 
     def _calculate_dem_difference(self, dem1_path, dem2_path, reference_crs=None, wall_code=""):
@@ -878,31 +999,75 @@ class MapGenerator:
         print(f"{'='*60}\n")
         return raster_layer
 
-    def _apply_heatmap_style(self, layer):
+    def _apply_heatmap_style(self, layer, custom_min=None, custom_max=None):
         """
-        Aplica estilo PseudoColor al raster.
-        Valores menores a 0.05m son TRANSPARENTES.
-        Rango visible: 0.05m a 1.0m.
+        Aplica estilo PseudoColor al raster con MAXIMO DINAMICO y COLORES VIBRANTES.
+        Valores menores a 0.05m (o custom_min) son TRANSPARENTES.
+        Rango visible: custom_min a MAXIMO (ajustable/custom).
+        Estilo "Global Mapper": Azul -> Verde (rápido) -> Amarillo -> Rojo.
         """
-        from qgis.core import QgsColorRampShader, QgsSingleBandPseudoColorRenderer, QgsRasterShader
+        from qgis.core import QgsColorRampShader, QgsSingleBandPseudoColorRenderer, QgsRasterShader, QgsRasterBandStats
+        import math
+        
+        # 1. Calcular estadísticas para obtener el máximo real
+        provider = layer.dataProvider()
+        stats = provider.bandStatistics(1, QgsRasterBandStats.All)
+        max_observed = stats.maximumValue
+        
+        # 2. Calcular Maximo Dinamico (o usar Custom)
+        if custom_max is not None and custom_max > 0:
+            max_val = float(custom_max)
+        else:
+            # Mínimo "techo" de 0.5m para evitar escalas raras en superficies muy planas
+            # Redondear hacia arriba al siguiente decimal (ej: 0.72 -> 0.8)
+            if max_observed > 0.05:
+                max_val = math.ceil(max_observed * 10) / 10.0
+                if max_val < 0.5:
+                    max_val = 0.5
+            else:
+                max_val = 0.5 # Default si no hay datos significativos
+            
+        # 3. Minimo (Custom o Default 0.05)
+        if custom_min is not None and custom_min > 0:
+            min_val = float(custom_min)
+        else:
+            min_val = 0.05
         
         fcn = QgsColorRampShader()
         fcn.setColorRampType(QgsColorRampShader.Interpolated)
         
-        # Rango fijo de valores: 0.05m a 1.0m
-        min_val = 0.05
-        max_val = 1.0
-            
-        # Escala de colores: Transparente (bajo) -> Verde/Amarillo -> Rojo (alto)
-        # Valores < 0.05m serán transparentes
+        # Definir colores (Estilo Global Mapper modificado)
+        c_transparent = QColor(0, 0, 0, 0)
+        c_blue = QColor(0, 0, 255)       # Azul (Inicio)
+        c_green = QColor(0, 255, 50)     # Verde fosforescente
+        c_yellow = QColor(255, 255, 0)   # Amarillo puro
+        c_orange = QColor(255, 128, 0)   # Naranja fuerte
+        c_red = QColor(255, 0, 0)        # Rojo brillante
+        
+        # Calcular puntos intermedios
+        rango = max_val - min_val
+        if rango <= 0: rango = 0.1
+        
+        # Distribución personalizada:
+        # 0%   -> Azul
+        # 15%  -> Verde (Transición rápida)
+        # 45%  -> Amarillo
+        # 80%  -> Naranja (Menos espacio al rojo)
+        # 100% -> Rojo
+        
+        val_15 = min_val + (rango * 0.15)
+        val_45 = min_val + (rango * 0.45)
+        val_80 = min_val + (rango * 0.80)
+        
         lst = [
-            QgsColorRampShader.ColorRampItem(0.0, QColor(0, 0, 0, 0), ""),                           # Transparente (< 0.05m)
-            QgsColorRampShader.ColorRampItem(min_val, QColor(180, 230, 180, 100), f"{min_val:.2f}m"), # Verde muy claro semi-transparente
-            QgsColorRampShader.ColorRampItem(0.25, QColor(180, 230, 150), "0.25m"),                  # Verde claro
-            QgsColorRampShader.ColorRampItem(0.50, QColor(255, 255, 100), "0.50m"),                  # Amarillo
-            QgsColorRampShader.ColorRampItem(0.75, QColor(255, 180, 50), "0.75m"),                   # Naranja
-            QgsColorRampShader.ColorRampItem(max_val, QColor(202, 0, 32), f"{max_val:.2f}m")         # Rojo (1.0m)
+            QgsColorRampShader.ColorRampItem(0.0, c_transparent, ""),              # Transparente
+            QgsColorRampShader.ColorRampItem(min_val, c_blue, f"{min_val:.2f}m"),  # Azul
+            QgsColorRampShader.ColorRampItem(val_15, c_green, f"{val_15:.2f}m"),   # Verde
+            QgsColorRampShader.ColorRampItem(val_45, c_yellow, f"{val_45:.2f}m"),  # Amarillo
+            QgsColorRampShader.ColorRampItem(val_80, c_orange, f"{val_80:.2f}m"),  # Naranja
+            QgsColorRampShader.ColorRampItem(max_val, c_red, f"{max_val:.2f}m")    # Rojo
         ]
+        
         fcn.setColorRampItemList(lst)
         
         shader = QgsRasterShader()
@@ -910,6 +1075,6 @@ class MapGenerator:
         
         renderer = QgsSingleBandPseudoColorRenderer(layer.dataProvider(), 1, shader)
         layer.setRenderer(renderer)
-        layer.setOpacity(0.85)  # Alta opacidad para valores visibles
+        layer.setOpacity(0.85)
         
         return min_val, max_val

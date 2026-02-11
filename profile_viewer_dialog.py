@@ -2,7 +2,7 @@
 import os
 from qgis.PyQt.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton, 
                                  QLabel, QSlider, QGroupBox, QMessageBox,
-                                 QFileDialog, QProgressDialog, QApplication, QSpinBox, QShortcut)
+                                 QFileDialog, QProgressDialog, QApplication, QSpinBox, QDoubleSpinBox, QShortcut)
 from qgis.PyQt.QtCore import Qt, QTimer
 from qgis.PyQt.QtXml import QDomDocument
 from qgis.PyQt.QtGui import QFont, QKeySequence
@@ -62,6 +62,7 @@ try:
     import matplotlib.pyplot as plt
     from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
     from matplotlib.figure import Figure
+    from matplotlib.offsetbox import AnchoredOffsetbox, TextArea, VPacker # 🆕 For multi-color legend
     
     # Handle different versions of matplotlib NavigationToolbar
     try:
@@ -273,7 +274,7 @@ class CustomNavigationToolbar(NavigationToolbar):
 class InteractiveProfileViewer(QDialog):
     """Interactive profile viewer with navigation and measurement tools"""
     
-    def __init__(self, profiles_data, parent=None, ecw_file_path=None):
+    def __init__(self, profiles_data, parent=None, ecw_file_path=None, excel_file_path=None, dem_path=None):
         super().__init__(parent)
         
         # Run diagnostic to help debug library issues
@@ -283,6 +284,8 @@ class InteractiveProfileViewer(QDialog):
         self.current_profile_index = 0
         self.measurement_mode = None
         self.ecw_file_path = ecw_file_path  # Store ECW file path
+        self.excel_file_path = excel_file_path  # 🆕 Store Excel template path
+        self.dem_path = dem_path  # 🆕 Store DEM path for date extraction
         
         # Separate measurements per PK
         self.saved_measurements = {}  # PK -> {crown: {x, y}, width: {p1, p2, distance}}
@@ -730,8 +733,31 @@ class InteractiveProfileViewer(QDialog):
         self.export_pdf_btn = QPushButton("📄 Generar Reporte PDF")
         self.export_pdf_btn.setStyleSheet("background-color: #d32f2f; color: white; font-weight: bold; padding: 8px;")
         self.export_pdf_btn.clicked.connect(self.export_pdf_report)
-        self.export_pdf_btn.clicked.connect(self.export_pdf_report)
         btn_layout3.addWidget(self.export_pdf_btn)
+        
+        # 🆕 MAP SETTINGS (Min/Max overrides)
+        map_settings_layout = QHBoxLayout()
+        map_settings_layout.addWidget(QLabel("Mapa Min:"))
+        self.map_min_spin = QDoubleSpinBox()
+        self.map_min_spin.setRange(0.01, 10.0)
+        self.map_min_spin.setSingleStep(0.05)
+        self.map_min_spin.setValue(0.05)
+        self.map_min_spin.setDecimals(2)
+        self.map_min_spin.setToolTip("Valor mínimo para la escala de colores del mapa (Default: 0.05m)")
+        map_settings_layout.addWidget(self.map_min_spin)
+        
+        map_settings_layout.addWidget(QLabel("Max:"))
+        self.map_max_spin = QDoubleSpinBox()
+        self.map_max_spin.setRange(0.0, 100.0)
+        self.map_max_spin.setSingleStep(0.1)
+        self.map_max_spin.setValue(0.0) # 0 = Auto
+        self.map_max_spin.setDecimals(2)
+        self.map_max_spin.setSpecialValueText("Auto")
+        self.map_max_spin.setToolTip("Valor máximo para la escala de colores (0 = Auto)")
+        map_settings_layout.addWidget(self.map_max_spin)
+        
+        # Add settings layout next to PDF button
+        btn_layout3.addLayout(map_settings_layout)
         
         # Measurement results
         self.crown_result = QLabel("Cota Coronamiento: --")
@@ -1922,6 +1948,61 @@ class InteractiveProfileViewer(QDialog):
         current_pk = profile.get('pk', 'Unknown')
         # 🆕 OBTENER RANGOS ESPECÍFICOS DEL MURO
         x_min, x_max = self.get_wall_display_range(profile)
+        
+        # 🆕 SMART ZOOM PARA PANTALLAZOS DE ALERTAS
+        if export_mode:
+            try:
+                # Recopilar puntos de interés (X coordinates)
+                interest_xs = []
+                
+                # 1. Puntos de LAMA
+                if current_pk in self.saved_measurements:
+                    if 'lama' in self.saved_measurements[current_pk]:
+                        interest_xs.append(self.saved_measurements[current_pk]['lama']['x'])
+                    elif 'lama_selected' in self.saved_measurements[current_pk]:
+                        interest_xs.append(self.saved_measurements[current_pk]['lama_selected']['x'])
+                
+                # Fallback a LAMA automático si no hay manual
+                if not interest_xs and profile.get('lama_points'):
+                    interest_xs.append(profile['lama_points'][0]['offset_from_centerline'])
+                
+                # 2. Puntos de Coronamiento
+                if current_pk in self.saved_measurements and 'crown' in self.saved_measurements[current_pk]:
+                    interest_xs.append(self.saved_measurements[current_pk]['crown']['x'])
+                elif self.current_crown_point:
+                    interest_xs.append(self.current_crown_point[0])
+                    
+                # 3. Puntos de Ancho (Extremos)
+                if current_pk in self.saved_measurements and 'width' in self.saved_measurements[current_pk]:
+                    p1 = self.saved_measurements[current_pk]['width']['p1']
+                    p2 = self.saved_measurements[current_pk]['width']['p2']
+                    interest_xs.append(p1[0]) # p1 x
+                    interest_xs.append(p2[0]) # p2 x
+                    
+                # Calcular nuevo rango si tenemos puntos de interés
+                if interest_xs:
+                    # Margen de 5 metros a cada lado
+                    padding = 5.0
+                    smart_min = min(interest_xs) - padding
+                    smart_max = max(interest_xs) + padding
+                    
+                    # Asegurar un ancho mínimo de visualización (ej. 15m) para contexto
+                    current_span = smart_max - smart_min
+                    min_span = 15.0
+                    if current_span < min_span:
+                        diff = (min_span - current_span) / 2
+                        smart_min -= diff
+                        smart_max += diff
+                    
+                    # Aplicar límites (respetando los límites máximos del muro)
+                    # No restringimos con x_min_wall/x_max_wall estrictamente por si el feature está fuera,
+                    # pero es bueno no mostrar infinito. Usaremos los calculados.
+                    x_min = smart_min
+                    x_max = smart_max
+                    print(f"🔎 Smart Zoom aplicado: {x_min:.2f}m a {x_max:.2f}m (Export Mode)")
+                    
+            except Exception as e:
+                print(f"⚠️ Error calculando Smart Zoom: {e}. Usando rango por defecto.")
         # Clear and plot
         self.ax.clear()
         
@@ -2162,18 +2243,87 @@ class InteractiveProfileViewer(QDialog):
                 width_val = self.saved_measurements[current_pk]['width']['distance']
                 legend_lines.append(f"─ Ancho: {width_val:.2f} m")
             
-            # Construir leyenda como texto
-            if legend_lines:
-                legend_text = "\n".join(legend_lines)
-                # Agregar cuadro de texto con la información
-                self.ax.text(0.98, 0.98, legend_text,
-                           transform=self.ax.transAxes,
-                           fontsize=11,
-                           verticalalignment='top',
-                           horizontalalignment='right',
-                           bbox=dict(boxstyle='round', facecolor='white', alpha=0.9, edgecolor='black', linewidth=1.5),
-                           family='monospace',
-                           weight='bold')
+            # 🆕 CONSTRUIR LEYENDA MULTICOLOR (VPacker)
+            try:
+                pack_items = []
+                
+                # Header - REMOVED AS REQUESTED
+                # pack_items.append(TextArea(f"Perfil: {current_pk}", textprops=dict(color='black', weight='bold', size=11, family='monospace')))
+                
+                # Cota Coronamiento
+                if crown_val is not None:
+                     pack_items.append(TextArea(f"─ Cota Coronamiento: {crown_val:.2f} m", textprops=dict(color='black', size=11, family='monospace')))
+
+                # Cota Lama
+                if lama_val is not None:
+                    pack_items.append(TextArea(f"● Cota Lama: {lama_val:.2f} m", textprops=dict(color='black', size=11, family='monospace')))
+                
+                # Revancha (ROJO si < 3.0)
+                if revancha_val is not None:
+                    color = 'red' if revancha_val < 3.0 else 'black'
+                    pack_items.append(TextArea(f"  Revancha: {revancha_val:.2f} m", textprops=dict(color=color, size=11, family='monospace')))
+                
+                # Ancho (ROJO si < 15.0)
+                if width_val is not None:
+                    color = 'red' if width_val < 15.0 else 'black'
+                    pack_items.append(TextArea(f"─ Ancho: {width_val:.2f} m", textprops=dict(color=color, size=11, family='monospace')))
+                
+                # Empaquetar verticalmente alineado a la derecha
+                vbox = VPacker(children=pack_items, align="right", pad=0, sep=4)
+                
+                # 🆕 Determinar posición según el muro seleccionado
+                # Default: Muro Principal (Top-Right)
+                # MO (Muro Oeste/2): Bottom-Right
+                loc_param = 'upper right'
+                bbox_param = (0.98, 0.98)
+                valign_param = 'top'
+                
+                try:
+                    # Intentar obtener nombre del muro desde el padre
+                    wall_name = "Muro Principal" 
+                    if self.parent() and hasattr(self.parent(), 'selected_wall') and self.parent().selected_wall:
+                        wall_name = self.parent().selected_wall
+                    
+                    wall_lower = wall_name.lower()
+                    if "oeste" in wall_lower or "mo" in wall_lower or "muro 2" in wall_lower:
+                        # Muro Oeste -> Abajo Derecha
+                        loc_param = 'lower right'
+                        bbox_param = (0.98, 0.02)
+                        valign_param = 'bottom'
+                except:
+                    pass
+
+                # Crear caja anclada
+                anchored_box = AnchoredOffsetbox(loc=loc_param, 
+                                               child=vbox, 
+                                               pad=0.5, 
+                                               frameon=True, 
+                                               bbox_to_anchor=bbox_param,
+                                               bbox_transform=self.ax.transAxes, 
+                                               borderpad=0.5)
+                
+                # Estilo del cuadro (igual al anterior)
+                anchored_box.patch.set_boxstyle("round,pad=0.5,rounding_size=0.2")
+                anchored_box.patch.set_facecolor("white")
+                anchored_box.patch.set_alpha(0.9)
+                anchored_box.patch.set_edgecolor("black")
+                anchored_box.patch.set_linewidth(1.5)
+                
+                self.ax.add_artist(anchored_box)
+                
+            except Exception as e:
+                print(f"⚠️ Error generando leyenda multicolor: {e}. Usando texto simple.")
+                # Fallback a texto simple si falla VPacker
+                if legend_lines:
+                    legend_text = "\n".join(legend_lines)
+                    self.ax.text(0.98, bbox_param[1], legend_text, # Use matching Y coord
+                               transform=self.ax.transAxes,
+                               fontsize=11,
+                               verticalalignment=valign_param, # Use matching alignment
+                               horizontalalignment='right',
+                               bbox=dict(boxstyle='round', facecolor='white', alpha=0.9, edgecolor='black', linewidth=1.5),
+                               family='monospace',
+                               weight='bold')
         else:
             # Remover leyenda si existe
             legend = self.ax.get_legend()
@@ -2285,15 +2435,26 @@ class InteractiveProfileViewer(QDialog):
             import os
             
             # 🎯 NOMBRE DINÁMICO SEGÚN MODO
+            # 🎯 NOMBRE DINÁMICO SEGÚN MODO
             mode_name = "ancho_proyectado" if self.operation_mode == "ancho_proyectado" else "revanchas"
             default_filename = f"mediciones_{mode_name}.csv"
             
-            file_path, _ = QFileDialog.getSaveFileName(
-                self,
-                f"Exportar Mediciones", # Renamed from Exportar Mediciones CSV
-                default_filename,
-                "CSV files (*.csv);;All files (*.*)"
-            )
+            is_excel_export = False
+            file_path = None
+            
+            # 🆕 LOGIC: Check if Excel template is provided
+            if self.excel_file_path and os.path.exists(self.excel_file_path):
+                is_excel_export = True
+                file_path = self.excel_file_path
+                print(f"📊 Exportando directamente a Excel: {file_path}")
+            else:
+                # Standard CSV Export
+                file_path, _ = QFileDialog.getSaveFileName(
+                    self,
+                    f"Exportar Mediciones", 
+                    default_filename,
+                    "CSV files (*.csv);;All files (*.*)"
+                )
             
             if not file_path:
                 return  # Usuario canceló
@@ -2431,39 +2592,81 @@ class InteractiveProfileViewer(QDialog):
                 self.current_profile_index = original_profile_index
                 self.update_profile_display()
             
-            # Escribir CSV
+            # Escribir CSV o Actualizar Excel
             if not progress.wasCanceled():
-                progress.setLabelText("Escribiendo archivo CSV...")
+                progress.setLabelText("Guardando datos...")
                 progress.setValue(95)
                 QApplication.processEvents()
                 
-                self.write_measurements_csv(file_path, export_data)
+                if is_excel_export:
+                    # 🆕 UPDATE EXCEL LOGIC
+                    try:
+                        from .core.excel_updater import ExcelUpdater
+                        updater = ExcelUpdater(file_path)
+                        
+                        # Detect wall name lookup
+                        wall_name = "Muro Principal" # Default fallback
+                        if self.parent() and hasattr(self.parent(), 'selected_wall') and self.parent().selected_wall:
+                            wall_name = self.parent().selected_wall
+                        
+                        # Get DEM filename
+                        dem_filename = os.path.basename(self.dem_path) if self.dem_path else "Unknown_DEM"
+                        
+                        # Update
+                        success, msg = updater.update_wall_data(wall_name, export_data, dem_filename)
+                        
+                        progress.close()
+                        
+                        if success:
+                             # Add alert info to message
+                             if screenshots_taken > 0:
+                                 msg += f"\n\n⚠️ Se generaron {screenshots_taken} pantallazos de alertas en:\n{profiles_dir}"
+                                 
+                             QMessageBox.information(self, "✅ Exportación Excel Exitosa", msg)
+                        else:
+                            QMessageBox.critical(self, "❌ Error Excel", f"Error actualizando Excel:\n{msg}")
+                            
+                    except Exception as e:
+                        progress.close()
+                        import traceback
+                        traceback.print_exc()
+                        QMessageBox.critical(self, "❌ Error Crítico", f"Error en módulo ExcelUpdater:\n{str(e)}")
                 
-                progress.setValue(100)
-                progress.close()
-                
-                # Calcular estadísticas para mostrar al usuario
-                total_rows = len(export_data)
-                
-                msg = f"Mediciones exportadas correctamente a:\n{file_path}\n"
-                
-                if screenshots_taken > 0:
-                    msg += f"\n📸 Se generaron {screenshots_taken} pantallazos de perfiles con alertas en:\n{profiles_dir}\n"
-                
-                msg += f"\n📊 Resumen:\n• Total de perfiles: {total_rows}\n"
-                
-                if self.operation_mode == "ancho_proyectado":
-                    rows_with_ancho = sum(1 for row in export_data if row['Ancho_Proyectado'] is not None)
-                    msg += f"• Con Ancho Proyectado: {rows_with_ancho}"
                 else:
-                    rows_with_revancha = sum(1 for row in export_data if row['Revancha'] is not None)
-                    msg += f"• Con Revancha: {rows_with_revancha}"
+                    # STANDARD CSV LOGIC
+                    progress.setLabelText("Escribiendo archivo CSV...")
+                    self.write_measurements_csv(file_path, export_data)
                     
-                QMessageBox.information(self, "✅ Exportación Exitosa", msg)
-            else:
-                progress.close()
+                    progress.setValue(100)
+                    progress.close()
+                    
+                    # Calcular estadísticas para mostrar al usuario
+                    total_rows = len(export_data)
+                    
+                    msg = f"Mediciones exportadas correctamente a:\n{file_path}\n"
+                    
+                    if screenshots_taken > 0:
+                        msg += f"\n📸 Se generaron {screenshots_taken} pantallazos de perfiles con alertas en:\n{profiles_dir}\n"
+                    
+                    msg += f"\n📊 Resumen:\n• Total de perfiles: {total_rows}\n"
+                    
+                    if self.operation_mode == "ancho_proyectado":
+                        rows_with_ancho = sum(1 for row in export_data if row['Ancho_Proyectado'] is not None)
+                        msg += f"• Con Ancho Proyectado: {rows_with_ancho}"
+                    else:
+                        rows_with_revancha = sum(1 for row in export_data if row['Revancha'] is not None)
+                        msg += f"• Con Revancha: {rows_with_revancha}"
+                        
+                    QMessageBox.information(self, "✅ Exportación Exitosa", msg)
+            
+            # Restaurar vista
+            self.current_profile_index = original_profile_index
+            self.load_profile_measurements()
+            self.update_profile_display()
             
         except Exception as e:
+            if 'progress' in locals():
+                progress.close()
             QMessageBox.critical(
                 self,
                 "❌ Error de Exportación",
@@ -3470,7 +3673,14 @@ class InteractiveProfileViewer(QDialog):
                     map_gen = MapGenerator(plugin_root)
                     
                     print(f"🗺️ Generando mapa para reporte: {wall_name}")
-                    if map_gen.generate_map_image(wall_name, self.ecw_file_path, current_dem, prev_dem, map_path):
+                    
+                    # 🆕 Obtener valores personalizados de Min/Max
+                    custom_min = self.map_min_spin.value()
+                    custom_max = self.map_max_spin.value()
+                    print(f"   ⚙️ Configuración Mapa: Min={custom_min}, Max={custom_max} (0=Auto)")
+                    
+                    if map_gen.generate_map_image(wall_name, self.ecw_file_path, current_dem, prev_dem, map_path, 
+                                                 custom_min=custom_min, custom_max=custom_max):
                         # Inyectar en layout
                         map_item = layout.itemById('main_map')
                         if map_item and isinstance(map_item, QgsLayoutItemPicture):

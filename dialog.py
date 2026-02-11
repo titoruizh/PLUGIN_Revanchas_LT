@@ -72,6 +72,9 @@ class RevanchasLTDialog(QtWidgets.QDialog, FORM_CLASS):
         
         # 🆕 Previous DEM UI - Create dynamically
         self.setup_previous_dem_ui()
+
+        # 🆕 Excel Export UI - Create dynamically
+        self.setup_excel_ui()
         
         # Initially disable button that requires DEM
         self.generate_profiles_button.setEnabled(False)
@@ -293,6 +296,65 @@ class RevanchasLTDialog(QtWidgets.QDialog, FORM_CLASS):
             self.prev_dem_path_label.setText(f"DEM Ant: {os.path.basename(file_path)}")
             self.prev_dem_path_label.setStyleSheet("color: green;")
 
+    def setup_excel_ui(self):
+        """🆕 Create Excel Export UI dynamically"""
+        # Access main layout
+        if self.layout():
+            layout = self.layout()
+            
+            # Create GroupBox
+            self.excel_group = QtWidgets.QGroupBox("📊 Exportación a Excel (Opcional)")
+            excel_layout = QtWidgets.QVBoxLayout()
+            self.excel_group.setLayout(excel_layout)
+            
+            # Horizontal layout for file selection
+            h_layout = QtWidgets.QHBoxLayout()
+            
+            self.excel_path_label = QtWidgets.QLabel("Excel: [No seleccionado - Exportación CSV estándar]")
+            self.browse_excel_button = QtWidgets.QPushButton("📂 Seleccionar Plantilla Excel")
+            self.browse_excel_button.setToolTip("Seleccione el archivo Excel para actualizar con las nuevas mediciones")
+            self.browse_excel_button.clicked.connect(self.browse_excel_file)
+            
+            h_layout.addWidget(self.excel_path_label)
+            h_layout.addStretch()
+            h_layout.addWidget(self.browse_excel_button)
+            
+            excel_layout.addLayout(h_layout)
+            
+            # Add info label
+            info_label = QtWidgets.QLabel("Si selecciona un Excel, las mediciones se insertarán en las columnas correspondientes manteniendo el formato.")
+            info_label.setStyleSheet("color: gray; font-style: italic; font-size: 10px;")
+            excel_layout.addWidget(info_label)
+            
+            # Insert BEFORE profiles group (which is usually near the end)
+            index = -1
+            for i in range(layout.count()):
+                item = layout.itemAt(i)
+                if item.widget() and item.widget().objectName() == "profiles_group":
+                    index = i
+                    break
+            
+            if index != -1:
+                layout.insertWidget(index, self.excel_group)
+            else:
+                layout.addWidget(self.excel_group)
+                
+        self.excel_file_path = None
+
+    def browse_excel_file(self):
+        """Browse for Excel file"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Seleccionar Plantilla Excel",
+            "",
+            "Excel Files (*.xlsx *.xlsm);;All files (*)"
+        )
+        
+        if file_path:
+            self.excel_file_path = file_path
+            self.excel_path_label.setText(f"Excel: {os.path.basename(file_path)}")
+            self.excel_path_label.setStyleSheet("color: blue; font-weight: bold;")
+
     
     def generate_and_visualize_profiles(self):
         """🚀 UNIFIED METHOD: Generate profiles and launch interactive viewer"""
@@ -386,7 +448,13 @@ class RevanchasLTDialog(QtWidgets.QDialog, FORM_CLASS):
             # 🚀 Launch interactive viewer directly
             try:
                 from .profile_viewer_dialog import InteractiveProfileViewer
-                self.profile_viewer = InteractiveProfileViewer(self.profiles_data, self, self.ecw_file_path)
+                self.profile_viewer = InteractiveProfileViewer(
+                    self.profiles_data, 
+                    self, 
+                    self.ecw_file_path,
+                    excel_file_path=self.excel_file_path,
+                    dem_path=self.dem_file_path  # We need this for the date extraction!
+                )
                 
                 # 🔄 Connect close event to cache measurements
                 self.profile_viewer.finished.connect(self.on_profile_viewer_closed)
