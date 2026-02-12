@@ -3564,6 +3564,36 @@ class InteractiveProfileViewer(QDialog):
                 doc.setContent(template_content)
                 layout.loadFromTemplate(doc, QgsReadWriteContext())
             
+            # 🆕 FIX: Convertir rutas de imágenes hardcodeadas en Rutas Relativas al Plugin actual
+            print("🖼️ Verificando portabilidad de imágenes en el layout...")
+            for item in layout.items():
+                if isinstance(item, QgsLayoutItemPicture):
+                    old_path = item.picturePath()
+                    if not old_path: continue
+                    
+                    filename_only = os.path.basename(old_path)
+                    item_id = item.id() or "Sin ID"
+                    
+                    # Criterios para corregir: es una ruta absoluta de Windows/AppData o apunta al plugin viejo
+                    is_suspicious = "AppData" in old_path or "PLUGIN_Canchas_Las_Tortolas" in old_path or "C:" in old_path
+                    
+                    if is_suspicious:
+                        # 1. Intentar encontrar el archivo en la carpeta de logos del plugin actual
+                        potential_path = os.path.join(plugin_dir, 'resources', 'logos', filename_only)
+                        
+                        # 2. Fallback: buscarlo en la raíz del plugin
+                        if not os.path.exists(potential_path):
+                            fallback = os.path.join(plugin_dir, filename_only)
+                            if os.path.exists(fallback):
+                                potential_path = fallback
+                        
+                        # Si encontramos el archivo localmente, forzamos la ruta
+                        if os.path.exists(potential_path):
+                            item.setPicturePath(potential_path)
+                            print(f"   ✅ Imagen '{item_id}' corregida: {filename_only} -> {potential_path}")
+                        else:
+                            print(f"   ⚠️ Imagen '{item_id}' detectada como no-portátil, pero no se encontró '{filename_only}' en el plugin.")
+            
             # 5. Inject Content into Template Items
             
             # 📅 Extraer y establecer fecha y muro del DEM actual
@@ -3674,6 +3704,10 @@ class InteractiveProfileViewer(QDialog):
                     
                     print(f"🗺️ Generando mapa para reporte: {wall_name}")
                     
+                    # 🆕 Forzar actualización de spinboxes (leer texto escrito aunque no haya focus out)
+                    self.map_min_spin.interpretText()
+                    self.map_max_spin.interpretText()
+                    
                     # 🆕 Obtener valores personalizados de Min/Max
                     custom_min = self.map_min_spin.value()
                     custom_max = self.map_max_spin.value()
@@ -3769,220 +3803,88 @@ class InteractiveProfileViewer(QDialog):
                     
                 if revancha_alert or width_alert:
                     alert_profiles.append(pk)
-            
             if alert_profiles:
                 print(f"📸 Detectadas {len(alert_profiles)} alertas, generando screenshots...")
+                    
+                # ENHANCED SYSTEM: Automatic slot discovery
+                # Instead of a hardcoded list, we find ALL items that start with 'alert_screenshot_'
+                # This lets the user add page after page in the QPT with more slots.
+                all_qpt_slots = []
+                for item in layout.items():
+                    if isinstance(item, QgsLayoutItemPicture) and item.id() and item.id().startswith('alert_screenshot_'):
+                        try:
+                            # Extraer el número del ID para ordenar correctamente
+                            num = int(item.id().replace('alert_screenshot_', ''))
+                            all_qpt_slots.append((num, item))
+                        except ValueError:
+                            continue
                 
-                # ENHANCED SYSTEM:
-                # - Screenshots 1-4: Page 3 (alert_screenshot_1 to alert_screenshot_4)
-                # - Screenshots 5-8: Page 4 (alert_screenshot_5 to alert_screenshot_8)
-                # - Screenshots 9-12: Page 5 (alert_screenshot_9 to alert_screenshot_12)
-                # - Screenshots 13+: Dynamic pages with 2×2 grid (starting from page 6)
-                
-                # Step 1: Use QPT elements for first 12 screenshots (pages 3-5)
-                qpt_screenshot_ids = [
-                    'alert_screenshot_1', 'alert_screenshot_2', 'alert_screenshot_3', 'alert_screenshot_4',  # Page 3
-                    'alert_screenshot_5', 'alert_screenshot_6', 'alert_screenshot_7', 'alert_screenshot_8',  # Page 4
-                    'alert_screenshot_9', 'alert_screenshot_10', 'alert_screenshot_11', 'alert_screenshot_12'  # Page 5
-                ]
+                # Ordenar por número (1, 2, 3...)
+                all_qpt_slots.sort(key=lambda x: x[0])
+                print(f"🔎 Encontrados {len(all_qpt_slots)} espacios para capturas en el QPT.")
                 
                 screenshots_placed = 0
                 
-                for i, pk in enumerate(alert_profiles[:12]):  # Max 12 for QPT (pages 3-5)
-                    # Check if QPT element exists
-                    item_id = qpt_screenshot_ids[i]
-                    qpt_item = layout.itemById(item_id)
+                # Step 1: Fill slots found in QPT
+                for i, (slot_num, qpt_item) in enumerate(all_qpt_slots):
+                    if i >= len(alert_profiles):
+                        break
+                        
+                    pk = alert_profiles[i]
                     
-                    if qpt_item and isinstance(qpt_item, QgsLayoutItemPicture):
-                        # Generate screenshot
-                        self.current_pk = pk
-                        for p_idx, p in enumerate(self.profiles_data):
-                            if str(p.get('pk')) == pk:
-                                self.current_profile_index = p_idx
-                                break
-                        self.update_profile_display(export_mode=True)
-                        QApplication.processEvents()
-                        
-                        # Save and inject
-                        screenshot_path = os.path.join(temp_dir, f"alert_{pk.replace('+','_')}.png")
-                        self.figure.savefig(screenshot_path)
-                        qpt_item.setPicturePath(screenshot_path)
-                        
-                        # Determine page number for logging
-                        page_num = 3 + (i // 4)  # Page 3 for 0-3, Page 4 for 4-7, Page 5 for 8-11
-                        print(f"✅ Screenshot {i+1}/12 inyectado en QPT Página {page_num}: {item_id}")
-                        screenshots_placed += 1
-                    else:
-                        print(f"⚠️ Elemento QPT '{item_id}' no encontrado o no es Picture")
-                        # Continue trying other elements instead of breaking
+                    # Generate screenshot
+                    self.current_pk = pk
+                    for p_idx, p in enumerate(self.profiles_data):
+                        if str(p.get('pk')) == pk:
+                            self.current_profile_index = p_idx
+                            break
+                    self.update_profile_display(export_mode=True)
+                    QApplication.processEvents()
+                    
+                    # Save and inject
+                    screenshot_path = os.path.join(temp_dir, f"alert_{pk.replace('+','_')}.png")
+                    self.figure.savefig(screenshot_path)
+                    qpt_item.setPicturePath(screenshot_path)
+                    
+                    print(f"✅ Screenshot {i+1} inyectado en slot QPT '{qpt_item.id()}'")
+                    screenshots_placed += 1
                 
-                # Step 2: Create dynamic pages ONLY for alerts beyond 12 (starting from page 6)
-                remaining_alerts = alert_profiles[screenshots_placed:]
-                
-                if remaining_alerts:
-                    print(f"📄 Creando páginas dinámicas para {len(remaining_alerts)} alertas restantes...")
-                    
-                    # Grid settings
-                    rows = 2
-                    cols = 2
-                    per_page = rows * cols
-                    
-                    import math
-                    from qgis.core import QgsLayoutItemPage
-                    num_pages_needed = math.ceil(len(remaining_alerts) / per_page)
-                    
-                    # Get current page count (should be 2: page 1 for tables, page 2 for map)
-                    current_page_count = layout.pageCollection().pageCount()
-                    
-                    # Safety check: Ensure we have at least one page to copy size from
-                    if current_page_count == 0:
-                        print("⚠️ Error crítico: El layout no tiene páginas. No se pueden generar capturas dinámicas.")
-                        base_page_size = None # Skip loop
-                        num_pages_needed = 0 # Skip loop
-                    else:
-                        base_page_size = layout.pageCollection().page(0).pageSize()
-                    
-                    for page_idx in range(num_pages_needed):
-                        # Create new page
-                        new_page = QgsLayoutItemPage(layout)
-                        new_page.setPageSize(base_page_size)
-                        layout.pageCollection().addPage(new_page)
-                        
-                        # Calculate Y offset (page 3+ = index 2+)
-                        page_height = layout.pageCollection().page(0).pageSize().height()
-                        page_number = current_page_count + page_idx  # 2, 3, 4...
-                        page_y_offset = page_number * page_height
-                        
-                        # Add title
-                        title_mf = QgsLayoutItemHtml(layout)
-                        title_mf.setHtml(f"<h2 style='font-family: Arial; color: #d32f2f;'>Perfiles con Alertas (Página {page_number + 1})</h2>")
-                        layout.addMultiFrame(title_mf)
-                        
-                        title_frame = QgsLayoutFrame(layout, title_mf)
-                        title_frame.attemptResize(QgsLayoutSize(280, 15, QgsUnitTypes.LayoutMillimeters))
-                        title_frame.attemptMove(QgsLayoutPoint(10, page_y_offset + 10, QgsUnitTypes.LayoutMillimeters))
-                        layout.addLayoutItem(title_frame)
-                        
-                        # Add screenshots for this page
-                        start_idx = page_idx * per_page
-                        end_idx = min(start_idx + per_page, len(remaining_alerts))
-                        page_alerts = remaining_alerts[start_idx:end_idx]
-                        
-                        for idx, pk in enumerate(page_alerts):
-                            # Generate screenshot
-                            self.current_pk = pk
-                            for p_idx, p in enumerate(self.profiles_data):
-                                if str(p.get('pk')) == pk:
-                                    self.current_profile_index = p_idx
-                                    break
-                            self.update_profile_display(export_mode=True)
-                            QApplication.processEvents()
-                            
-                            screenshot_path = os.path.join(temp_dir, f"alert_{pk.replace('+','_')}.png")
-                            self.figure.savefig(screenshot_path)
-                            
-                            # Grid positioning
-                            row = idx // cols
-                            col = idx % cols
-                            
-                            w = 130  # mm
-                            h = 80   # mm
-                            x = 10 + (col * 140)
-                            y = 30 + (row * 90) + page_y_offset
-                            
-                            # Add picture
-                            pic = QgsLayoutItemPicture(layout)
-                            pic.setPicturePath(screenshot_path)
-                            pic.attemptResize(QgsLayoutSize(w, h, QgsUnitTypes.LayoutMillimeters))
-                            pic.attemptMove(QgsLayoutPoint(x, y, QgsUnitTypes.LayoutMillimeters))
-                            layout.addLayoutItem(pic)
-                            
-                            # Add label
-                            lbl_mf = QgsLayoutItemHtml(layout)
-                            lbl_mf.setHtml(f"<h3 style='font-family: Arial;'>PK: {pk}</h3>")
-                            layout.addMultiFrame(lbl_mf)
-                            
-                            lbl_frame = QgsLayoutFrame(layout, lbl_mf)
-                            lbl_frame.attemptResize(QgsLayoutSize(w, 10, QgsUnitTypes.LayoutMillimeters))
-                            lbl_frame.attemptMove(QgsLayoutPoint(x, y - 10, QgsUnitTypes.LayoutMillimeters))
-                            layout.addLayoutItem(lbl_frame)
-                    
-                    print(f"✅ Creadas {num_pages_needed} páginas dinámicas (páginas {current_page_count + 1} a {current_page_count + num_pages_needed})")
-            else:
-                # 🔥 NO HAY ALERTAS: Eliminar página 3 del layout (si existe)
-                print("📊 No se detectaron alertas - verificando si existe página 3 para eliminarla...")
-                
-                # Obtener número de páginas en el layout cargado desde QPT
-                page_collection = layout.pageCollection()
-                total_pages = page_collection.pageCount()
-                
-                print(f"   Layout tiene {total_pages} páginas iniciales")
-                
-                # Si hay 3 o más páginas, eliminar desde la página 3 en adelante
-                # (Página 0 = primera, Página 1 = segunda, Página 2 = tercera)
-                if total_pages >= 3:
-                    # Eliminar páginas desde la última hacia atrás para evitar problemas de índice
-                    pages_to_remove = []
-                    for page_idx in range(2, total_pages):  # Índices 2, 3, 4, ...
-                        pages_to_remove.append(page_idx)
-                    
-                    # Eliminar en orden inverso
-                    for page_idx in reversed(pages_to_remove):
-                        page_to_remove = page_collection.page(page_idx)
-                        if page_to_remove:
-                            # Primero eliminar todos los items que estén en esa página
-                            items_to_remove = []
-                            for item in layout.items():
-                                if hasattr(item, 'page') and item.page() == page_idx:
-                                    items_to_remove.append(item)
-                            
-                            # Remover items
-                            for item in items_to_remove:
-                                layout.removeLayoutItem(item)
-                            
-                            # Ahora remover la página
-                            page_collection.deletePage(page_idx)
-                            print(f"   ✅ Página {page_idx + 1} eliminada (sin alertas)")
-                    
-                    print(f"   Layout final tiene {page_collection.pageCount()} páginas")
-                else:
-                    print(f"   Layout solo tiene {total_pages} páginas, no hay página 3 que eliminar")
+                # Step 2: Inform if there are more alerts than slots in QPT
+                if screenshots_placed < len(alert_profiles):
+                    print(f"⚠️ AVISO: Quedaron {len(alert_profiles) - screenshots_placed} alertas sin espacio en el QPT.")
+                    # El usuario prefiere no crear hojas dinámicas "feas", 
+                    # así que solo avisamos para que añada más hojas al QPT si lo necesita.
             
-            # 🆕 ELIMINAR PÁGINAS VACÍAS DESPUÉS DE INYECTAR SCREENSHOTS
-            # Si hay alertas pero no se llenaron todas las páginas QPT (3-5), eliminar las vacías
-            if alert_profiles:
-                num_alerts = len(alert_profiles)
-                page_collection = layout.pageCollection()
-                
-                # Determinar qué páginas eliminar según cantidad de alertas
-                pages_to_delete = []
-                
-                if num_alerts <= 4:
-                    # Solo usar página 3, eliminar 4 y 5 si existen
-                    pages_to_delete = [3, 4]  # Índices de página (0-based, entonces páginas 4 y 5)
-                    print(f"📋 {num_alerts} alertas (1-4) - Eliminando páginas 4 y 5 si existen")
-                elif num_alerts <= 8:
-                    # Usar páginas 3-4, eliminar 5 si existe
-                    pages_to_delete = [4]  # Índice de página 5
-                    print(f"📋 {num_alerts} alertas (5-8) - Eliminando página 5 si existe")
-                else:
-                    # 9-12 alertas: Usar todas las páginas QPT (3-5), no eliminar nada
-                    print(f"📋 {num_alerts} alertas (9-12) - Usando todas las páginas QPT")
-                
-                # Eliminar páginas identificadas (en orden inverso)
-                for page_idx in reversed(pages_to_delete):
-                    if page_idx < page_collection.pageCount():
-                        page = page_collection.page(page_idx)
-                        if page:
-                            # Eliminar items de la página
-                            items_to_remove = [item for item in layout.items() 
-                                             if hasattr(item, 'page') and item.page() == page_idx]
-                            for item in items_to_remove:
-                                layout.removeLayoutItem(item)
-                            
-                            # Eliminar página
-                            page_collection.deletePage(page_idx)
-                            print(f"   ✅ Página {page_idx + 1} eliminada (vacía)")
+            # 🆕 LOGICA CONSOLIDADA DE LIMPIEZA DE PÁGINAS (Páginas 3+ / Índices 2+)
+            # Esta lógica determina cuántas páginas de alertas se necesitan realmente
+            # y elimina CUALQUIER página sobrante del layout (tanto QPT como dinámicas si sobran)
+            
+            import math
+            num_alerts = len(alert_profiles)
+            alert_pages_needed = math.ceil(num_alerts / 4)
+            first_alert_page_idx = 2  # Hoja 3 (donde empiezan los perfiles)
+            
+            # El índice de la primera página a ELIMINAR es:
+            start_delete_idx = first_alert_page_idx + alert_pages_needed
+            
+            page_collection = layout.pageCollection()
+            total_pages_now = page_collection.pageCount()
+            
+            if start_delete_idx < total_pages_now:
+                print(f"🧹 Limpiando {total_pages_now - start_delete_idx} páginas vacías (desde índice {start_delete_idx})...")
+                # Eliminar en orden inverso para no alterar los índices durante el proceso
+                for page_idx in range(total_pages_now - 1, start_delete_idx - 1, -1):
+                    # 1. Eliminar items de la página
+                    items_to_remove = [item for item in layout.items() 
+                                     if hasattr(item, 'page') and item.page() == page_idx]
+                    for item in items_to_remove:
+                        layout.removeLayoutItem(item)
+                    
+                    # 2. Eliminar página
+                    page_collection.deletePage(page_idx)
+                    print(f"   ✅ Página {page_idx + 1} eliminada")
+            else:
+                print(f"📋 No hay páginas que limpiar (Necesarias: {alert_pages_needed}, Actuales: {total_pages_now - first_alert_page_idx} de alertas)")
             
             # 🆕 Generate Longitudinal Chart (Before Export)
             try:

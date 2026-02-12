@@ -186,9 +186,9 @@ class MapGenerator:
             layout = QgsPrintLayout(project)
             layout.initializeDefaults()
             
-            # Página más horizontal/rectangular (cortar espacio vacío abajo)
+            # Página tamaño A4 horizontal (297 x 210 mm)
             page = layout.pageCollection().page(0)
-            page.setPageSize(QgsLayoutSize(297, 150, QgsUnitTypes.LayoutMillimeters))  # Más corto
+            page.setPageSize(QgsLayoutSize(297, 210, QgsUnitTypes.LayoutMillimeters))
             
             # Calcular extent para el mapa - usar SECTORES como base SIN margen
             # Los sectores cubren el área de trabajo visible mejor que el perímetro
@@ -218,13 +218,13 @@ class MapGenerator:
             print(f"Extent height (m): {extent.height():.2f}")
             print(f"Extent aspect ratio: {extent.width()/extent.height():.3f}")
             print(f"Rotation: {rotation}°")
-            print(f"Map item size (mm): 255 x 140")
-            print(f"Map item aspect ratio: {255/140:.3f}")
+            print(f"Map item size (mm): 255 x 200")
+            print(f"Map item aspect ratio: {255/200:.3f}")
             print(f"{'='*60}\n")
             
             # 3. Agregar Mapa Principal (con rotación) - Llenar toda la página
             map_item = QgsLayoutItemMap(layout)
-            map_item.attemptResize(QgsLayoutSize(255, 140, QgsUnitTypes.LayoutMillimeters))
+            map_item.attemptResize(QgsLayoutSize(255, 200, QgsUnitTypes.LayoutMillimeters))
             map_item.attemptMove(QgsLayoutPoint(38, 5, QgsUnitTypes.LayoutMillimeters))
             
             # *** FIX: Agregar capa raster recortada al proyecto temporalmente para renderizado ***
@@ -363,28 +363,30 @@ class MapGenerator:
         
         # Configuración de la barra
         bar_x = 5      # Posición X
-        bar_y = 25     # Posición Y inicio
+        bar_y = 35     # Posición Y inicio
         bar_width = 10 # Ancho de la barra
-        bar_height = 120 # Alto total de la barra
+        bar_height = 150 # Alto total de la barra
         
-        # Definir colores (Estilo Global Mapper)
-        # Max (Arriba) -> Min (Abajo)
-        c_blue = QColor(0, 0, 255)       # Azul
-        c_green = QColor(0, 255, 50)     # Verde
-        c_yellow = QColor(255, 255, 0)   # Amarillo
-        c_orange = QColor(255, 128, 0)   # Naranja
-        c_red = QColor(255, 0, 0)        # Rojo
+        # Definir colores consistentes con el renderer
+        c_blue = QColor(0, 0, 255)        # Azul puro
+        c_cyan = QColor(0, 255, 255)      # Cyan puro
+        c_green = QColor(0, 255, 0)       # Verde puro
+        c_yellow = QColor(255, 255, 0)    # Amarillo puro
+        c_orange = QColor(255, 128, 0)    # Naranja
+        c_red = QColor(255, 0, 0)         # Rojo puro
         
         # Stops normalizados (0.0=Top=Max, 1.0=Bottom=Min)
+        # Sincronizados con los porcentajes de _apply_heatmap_style (1.0 - porcentaje)
         color_stops = [
-            (0.0, c_red),       # Top: Rojo
-            (0.20, c_orange),   # 80% del valor
-            (0.55, c_yellow),   # 45% del valor
-            (0.85, c_green),    # 15% del valor (Transición rápida al azul abajo)
-            (1.0, c_blue)       # Bottom: Azul
+            (0.0, c_red),       # 100% Max
+            (0.20, c_orange),   # 80% 
+            (0.55, c_yellow),   # 45%
+            (0.85, c_green),    # 15%
+            (0.95, c_cyan),     # 5%
+            (1.0, c_blue)       # 0% Min
         ]
         
-        num_segments = 20  # Más segmentos = gradiente más suave
+        num_segments = 100  # Aumentamos a 100 para que el gradiente sea totalmente suave y no se vean cuadros
         segment_height = bar_height / num_segments
         
         for i in range(num_segments):
@@ -519,8 +521,8 @@ class MapGenerator:
         scale_bar.setFont(QFont("Arial", 8))
         
         # Posición: Abajo a la izquierda, evitando la leyenda de colores (x=15 max)
-        # Mover más cerca de la leyenda (x=22) y alineado con texto superficies (y=138)
-        scale_bar.attemptMove(QgsLayoutPoint(22, 138, QgsUnitTypes.LayoutMillimeters))
+        # Mover más cerca de la leyenda (x=22) y alineado con texto superficies (y=195)
+        scale_bar.attemptMove(QgsLayoutPoint(22, 195, QgsUnitTypes.LayoutMillimeters))
         scale_bar.attemptResize(QgsLayoutSize(35, 8, QgsUnitTypes.LayoutMillimeters))
         layout.addLayoutItem(scale_bar)
 
@@ -574,7 +576,7 @@ class MapGenerator:
         # Queremos que termine cerca del borde derecho (aprox 275mm)
         # x_pos = 275 - 120 (ancho) = 155
         x_pos = 155 
-        y_pos = 135  # Cerca del borde inferior (página tiene 150mm de alto)
+        y_pos = 190  # Cerca del borde inferior (página tiene 210mm de alto)
         width = 120
         
         # Etiqueta 1: Superficie actual - 🆕 NEGRITA
@@ -1036,36 +1038,37 @@ class MapGenerator:
         fcn = QgsColorRampShader()
         fcn.setColorRampType(QgsColorRampShader.Interpolated)
         
-        # Definir colores (Estilo Global Mapper modificado)
+        # Definir colores (Estilo Global Mapper Estándar)
         c_transparent = QColor(0, 0, 0, 0)
-        c_blue = QColor(0, 0, 255)       # Azul (Inicio)
-        c_green = QColor(0, 255, 50)     # Verde fosforescente
-        c_yellow = QColor(255, 255, 0)   # Amarillo puro
-        c_orange = QColor(255, 128, 0)   # Naranja fuerte
-        c_red = QColor(255, 0, 0)        # Rojo brillante
+        c_blue = QColor(0, 0, 255)       # Azul
+        c_cyan = QColor(0, 255, 255)     # Cyan
+        c_green = QColor(0, 255, 0)      # Verde
+        c_yellow = QColor(255, 255, 0)   # Amarillo
+        c_orange = QColor(255, 128, 0)   # Naranja
+        c_red = QColor(255, 0, 0)        # Rojo
         
         # Calcular puntos intermedios
         rango = max_val - min_val
         if rango <= 0: rango = 0.1
         
-        # Distribución personalizada:
-        # 0%   -> Azul
-        # 15%  -> Verde (Transición rápida)
-        # 45%  -> Amarillo
-        # 80%  -> Naranja (Menos espacio al rojo)
-        # 100% -> Rojo
-        
-        val_15 = min_val + (rango * 0.15)
-        val_45 = min_val + (rango * 0.45)
-        val_80 = min_val + (rango * 0.80)
+        # 🆕 ESTRATEGIA DE SENSIBILIDAD (Fade-in):
+        # En vez de empezar en azul sólido a los 0.05m, empezamos transparentes
+        # y llegamos al azul sólido 2cm después. Esto reduce el "ruido" azul.
+        vis_buffer = 0.02
+        val_blue = min_val + vis_buffer
+        val_05 = min_val + (rango * 0.05) # Cyan muy temprano
+        val_15 = min_val + (rango * 0.15) # Verde
+        val_45 = min_val + (rango * 0.45) # Amarillo
+        val_80 = min_val + (rango * 0.80) # Naranja
         
         lst = [
-            QgsColorRampShader.ColorRampItem(0.0, c_transparent, ""),              # Transparente
-            QgsColorRampShader.ColorRampItem(min_val, c_blue, f"{min_val:.2f}m"),  # Azul
-            QgsColorRampShader.ColorRampItem(val_15, c_green, f"{val_15:.2f}m"),   # Verde
-            QgsColorRampShader.ColorRampItem(val_45, c_yellow, f"{val_45:.2f}m"),  # Amarillo
-            QgsColorRampShader.ColorRampItem(val_80, c_orange, f"{val_80:.2f}m"),  # Naranja
-            QgsColorRampShader.ColorRampItem(max_val, c_red, f"{max_val:.2f}m")    # Rojo
+            QgsColorRampShader.ColorRampItem(min_val, c_transparent, ""),           # Transparente en el Min
+            QgsColorRampShader.ColorRampItem(val_blue, c_blue, f"{min_val:.2f}m"), # Azul sólido +2cm
+            QgsColorRampShader.ColorRampItem(val_05, c_cyan, ""),                   # Cyan (Suavizado)
+            QgsColorRampShader.ColorRampItem(val_15, c_green, f"{val_15:.2f}m"),    # Verde
+            QgsColorRampShader.ColorRampItem(val_45, c_yellow, f"{val_45:.2f}m"),   # Amarillo
+            QgsColorRampShader.ColorRampItem(val_80, c_orange, f"{val_80:.2f}m"),   # Naranja
+            QgsColorRampShader.ColorRampItem(max_val, c_red, f"{max_val:.2f}m")     # Rojo
         ]
         
         fcn.setColorRampItemList(lst)
