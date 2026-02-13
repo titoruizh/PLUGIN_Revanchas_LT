@@ -2445,8 +2445,21 @@ class InteractiveProfileViewer(QDialog):
             # 🆕 LOGIC: Check if Excel template is provided
             if self.excel_file_path and os.path.exists(self.excel_file_path):
                 is_excel_export = True
-                file_path = self.excel_file_path
-                print(f"📊 Exportando directamente a Excel: {file_path}")
+                template_path = self.excel_file_path
+                
+                # Prompt for Save As, defaulting to template name
+                default_save_name = os.path.basename(template_path)
+                file_path, _ = QFileDialog.getSaveFileName(
+                    self,
+                    f"Guardar Excel como...", 
+                    default_save_name,
+                    "Excel Files (*.xlsx);;All files (*.*)"
+                )
+                
+                if not file_path:
+                    return # User cancelled
+                    
+                print(f"📊 Exportando a Excel: {file_path} (Template: {template_path})")
             else:
                 # Standard CSV Export
                 file_path, _ = QFileDialog.getSaveFileName(
@@ -2602,7 +2615,8 @@ class InteractiveProfileViewer(QDialog):
                     # 🆕 UPDATE EXCEL LOGIC
                     try:
                         from .core.excel_updater import ExcelUpdater
-                        updater = ExcelUpdater(file_path)
+                        # Pass source template and destination path
+                        updater = ExcelUpdater(file_path, template_path=template_path)
                         
                         # Detect wall name lookup
                         wall_name = "Muro Principal" # Default fallback
