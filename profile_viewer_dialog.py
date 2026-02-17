@@ -363,6 +363,13 @@ class InteractiveProfileViewer(QDialog):
         self.shortcut_crown.activated.connect(lambda: self.crown_btn.click())
         self.shortcut_width.activated.connect(lambda: self.width_btn.click())
         
+        # 🆕 Navigation commands (S = Previous, D = Next)
+        self.shortcut_prev = QShortcut(QKeySequence("S"), self)
+        self.shortcut_next = QShortcut(QKeySequence("D"), self)
+        
+        self.shortcut_prev.activated.connect(lambda: self.prev_btn.click())
+        self.shortcut_next.activated.connect(lambda: self.next_btn.click())
+        
         # Ensure canvas gets focus immediately
         self.canvas.setFocus()
 
@@ -2472,23 +2479,12 @@ class InteractiveProfileViewer(QDialog):
             if not file_path:
                 return  # Usuario canceló
             
-            # Crear carpeta de perfiles si no existe
-            profiles_dir = os.path.join(os.path.dirname(file_path), "Perfiles")
-            if not os.path.exists(profiles_dir):
-                try:
-                    os.makedirs(profiles_dir)
-                except Exception as e:
-                    print(f"Error creando carpeta Perfiles: {e}")
-            
             # Mostrar progreso
-            progress = QProgressDialog("Recopilando mediciones y generando pantallazos...", "Cancelar", 0, 100, self)
+            progress = QProgressDialog("Recopilando mediciones...", "Cancelar", 0, 100, self)
             progress.setWindowModality(Qt.WindowModal)
             progress.show()
             
             QApplication.processEvents()
-            
-            # Guardar el índice actual para restaurarlo al final
-            original_profile_index = self.current_profile_index
             
             # Recopilar datos de todos los perfiles
             export_data = []
@@ -2498,15 +2494,11 @@ class InteractiveProfileViewer(QDialog):
             progress.setValue(0)
             QApplication.processEvents()
             
-            screenshots_taken = 0
-            
             for i, profile in enumerate(self.profiles_data):
                 pk = profile['pk']
                 
                 # Obtener mediciones guardadas
                 measurements = self.saved_measurements.get(pk, {})
-                
-                should_take_screenshot = False
                 
                 if self.operation_mode == "ancho_proyectado":
                     # Modo Ancho Proyectado: Solo PK y Ancho
@@ -2515,11 +2507,6 @@ class InteractiveProfileViewer(QDialog):
                         'PK': pk,
                         'Ancho_Proyectado': width_val
                     }
-                    
-                    # Check alert
-                    if width_val is not None and width_val < 15.0:
-                        should_take_screenshot = True
-                        
                 else:
                     # Modo Revancha
                     # Obtener datos automáticos (LAMA siempre disponible)
@@ -2555,42 +2542,8 @@ class InteractiveProfileViewer(QDialog):
                         'Lama': lama_elevation,
                         'Ancho': width_value
                     }
-                    
-                    # Check alerts
-                    if (revancha_value is not None and revancha_value < 3.0) or \
-                       (width_value is not None and width_value < 15.0):
-                        should_take_screenshot = True
                 
                 export_data.append(row_data)
-                
-                # 📸 GENERAR PANTALLAZO SI HAY ALERTA
-                if should_take_screenshot:
-                    try:
-                        # Cambiar al perfil
-                        self.current_profile_index = i
-                        self.update_profile_display(export_mode=True)
-                        QApplication.processEvents() # Permitir redibujado de UI
-                        
-                        # Generar nombre de archivo
-                        safe_pk = str(pk).replace('.', '_')
-                        filename = f"Perfil_PK_{safe_pk}"
-                        if self.operation_mode == "revancha":
-                            if row_data.get('Revancha') is not None and row_data['Revancha'] < 3.0:
-                                filename += f"_Revancha_{row_data['Revancha']:.2f}"
-                        
-                        if width_val := (row_data.get('Ancho') or row_data.get('Ancho_Proyectado')):
-                            if width_val < 15.0:
-                                filename += f"_Ancho_{width_val:.2f}"
-                                
-                        filename += ".png"
-                        full_screenshot_path = os.path.join(profiles_dir, filename)
-                        
-                        # Guardar la figura actual
-                        self.figure.savefig(full_screenshot_path, dpi=100, bbox_inches='tight')
-                        screenshots_taken += 1
-                        
-                    except Exception as e:
-                        print(f"Error generando pantallazo para PK {pk}: {e}")
                 
                 # Actualizar progreso
                 progress_percent = int((i / total_profiles) * 90)
@@ -2599,11 +2552,6 @@ class InteractiveProfileViewer(QDialog):
                 
                 if progress.wasCanceled():
                     break
-            
-            # Restaurar vista original
-            if self.current_profile_index != original_profile_index:
-                self.current_profile_index = original_profile_index
-                self.update_profile_display()
             
             # Escribir CSV o Actualizar Excel
             if not progress.wasCanceled():
@@ -2632,10 +2580,6 @@ class InteractiveProfileViewer(QDialog):
                         progress.close()
                         
                         if success:
-                             # Add alert info to message
-                             if screenshots_taken > 0:
-                                 msg += f"\n\n⚠️ Se generaron {screenshots_taken} pantallazos de alertas en:\n{profiles_dir}"
-                                 
                              QMessageBox.information(self, "✅ Exportación Excel Exitosa", msg)
                         else:
                             QMessageBox.critical(self, "❌ Error Excel", f"Error actualizando Excel:\n{msg}")
@@ -2659,9 +2603,6 @@ class InteractiveProfileViewer(QDialog):
                     
                     msg = f"Mediciones exportadas correctamente a:\n{file_path}\n"
                     
-                    if screenshots_taken > 0:
-                        msg += f"\n📸 Se generaron {screenshots_taken} pantallazos de perfiles con alertas en:\n{profiles_dir}\n"
-                    
                     msg += f"\n📊 Resumen:\n• Total de perfiles: {total_rows}\n"
                     
                     if self.operation_mode == "ancho_proyectado":
@@ -2673,10 +2614,7 @@ class InteractiveProfileViewer(QDialog):
                         
                     QMessageBox.information(self, "✅ Exportación Exitosa", msg)
             
-            # Restaurar vista
-            self.current_profile_index = original_profile_index
-            self.load_profile_measurements()
-            self.update_profile_display()
+
             
         except Exception as e:
             if 'progress' in locals():
@@ -3507,7 +3445,25 @@ class InteractiveProfileViewer(QDialog):
                 return
 
             # 2. Ask for output file
-            filename, _ = QFileDialog.getSaveFileName(self, "Guardar Reporte PDF", "Reporte_Mediciones.pdf", "PDF Files (*.pdf)")
+            # 🆕 AUTOMATED FILENAME GENERATION
+            default_filename = "Reporte_Revancha.pdf"
+            
+            try:
+                main_dialog = self.parent()
+                current_dem_path = getattr(main_dialog, 'dem_file_path', None)
+                
+                if current_dem_path:
+                    dem_name = os.path.splitext(os.path.basename(current_dem_path))[0]
+                    
+                    # Pattern check: DEM_MURO_FECHA (e.g. DEM_MP_260217)
+                    if dem_name.startswith("DEM_") and len(dem_name.split('_')) >= 3:
+                        # Replace 'DEM' with 'Reporte_Revancha'
+                        default_filename = dem_name.replace("DEM", "Reporte_Revancha", 1) + ".pdf"
+                        print(f"🤖 Nombre de reporte automatizado: {default_filename}")
+            except Exception as e:
+                print(f"⚠️ Error al generar nombre automático: {e}")
+
+            filename, _ = QFileDialog.getSaveFileName(self, "Guardar Reporte PDF", default_filename, "PDF Files (*.pdf)")
             if not filename:
                 return
 
