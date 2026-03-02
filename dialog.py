@@ -112,54 +112,74 @@ class RevanchasLTDialog(QtWidgets.QDialog, FORM_CLASS):
                 # Load DEM info
                 dem_info = self.dem_processor.get_dem_info(file_path)
                 
-                # ✅ VALIDAR COBERTURA DE LA ALINEACIÓN
-                if self.selected_wall:
+                # ADVERTIR si no hay muro seleccionado
+                if not self.selected_wall:
+                    QMessageBox.warning(
+                        self,
+                        "Muro no seleccionado",
+                        "No hay un muro seleccionado.\n\n"
+                        "El DEM se cargará sin validación espacial.\n"
+                        "Seleccione un muro antes de cargar el DEM para verificar la cobertura."
+                    )
+                else:
+                    # VALIDAR COBERTURA DE LA ALINEACIÓN
                     from .core.dem_validator import DEMValidator
                     
                     alignment = self.alignment_data.get_alignment(self.selected_wall)
                     validation = DEMValidator.validate_dem_coverage(dem_info, alignment)
+                    coverage_pct = DEMValidator.calculate_coverage_percentage(dem_info, alignment)
                     
                     if not validation['coverage_ok']:
-                        # ❌ DEM NO CUBRE LA ALINEACIÓN
-                        QMessageBox.critical(
+                        # DEM no cubre totalmente - preguntar si continuar igual
+                        uncovered = DEMValidator.get_uncovered_stations(dem_info, alignment)
+                        missing = validation['missing_coverage']
+                        
+                        reply = QMessageBox.warning(
                             self,
-                            "Error - DEM Insuficiente",
-                            f"El DEM seleccionado NO cubre la alineación del {self.selected_wall}.\n\n"
-                            f"🎯 Área requerida (con buffer 50m):\n"
-                            f"X: {validation['alignment_bounds']['xmin']:.1f} - {validation['alignment_bounds']['xmax']:.1f}\n"
-                            f"Y: {validation['alignment_bounds']['ymin']:.1f} - {validation['alignment_bounds']['ymax']:.1f}\n\n"
-                            f"📍 DEM disponible:\n"
-                            f"X: {validation['dem_bounds']['xmin']:.1f} - {validation['dem_bounds']['xmax']:.1f}\n"
-                            f"Y: {validation['dem_bounds']['ymin']:.1f} - {validation['dem_bounds']['ymax']:.1f}\n\n"
-                            f"❌ Seleccione un DEM que cubra completamente la zona del muro."
+                            "Advertencia - Cobertura DEM parcial",
+                            f"El DEM no cubre completamente la alineación del {self.selected_wall}.\n\n"
+                            f"Cobertura: {coverage_pct:.1f}% de las estaciones "
+                            f"({validation['stations_count'] - len(uncovered)}/{validation['stations_count']})\n\n"
+                            f"Area requerida (buffer 50m):\n"
+                            f"  X: {validation['alignment_bounds']['xmin']:.1f} - {validation['alignment_bounds']['xmax']:.1f}\n"
+                            f"  Y: {validation['alignment_bounds']['ymin']:.1f} - {validation['alignment_bounds']['ymax']:.1f}\n\n"
+                            f"DEM disponible:\n"
+                            f"  X: {validation['dem_bounds']['xmin']:.1f} - {validation['dem_bounds']['xmax']:.1f}\n"
+                            f"  Y: {validation['dem_bounds']['ymin']:.1f} - {validation['dem_bounds']['ymax']:.1f}\n\n"
+                            f"Deficit X: {missing['x_deficit']:.1f}m   Deficit Y: {missing['y_deficit']:.1f}m\n\n"
+                            f"Los perfiles fuera del DEM quedarán sin datos de elevacion.\n"
+                            f"¿Desea continuar de todas formas?",
+                            QMessageBox.Yes | QMessageBox.No,
+                            QMessageBox.No
                         )
-                        return  # ❌ NO continuar si DEM no es válido
-                    
-                    # ✅ DEM válido - mostrar confirmación
-                    QMessageBox.information(
-                        self,
-                        "✅ DEM Validado",
-                        f"El DEM cubre correctamente la alineación del {self.selected_wall}."
-                    )
+                        
+                        if reply == QMessageBox.No:
+                            return  # usuario eligió no continuar
+                        
+                        # Continuar con advertencia en el label
+                        coverage_status = f" ⚠ Cobertura parcial ({coverage_pct:.0f}%)"
+                    else:
+                        coverage_status = f" ✓ Cubre alineacion ({coverage_pct:.0f}%)"
                 
-                # ✅ Continuar con carga normal
+                # Continuar con carga normal
                 self.dem_file_path = file_path
-                self.dem_path_label.setText(f"DEM: {os.path.basename(file_path)}")
+                coverage_note = coverage_status if self.selected_wall else " (sin validar)"
+                self.dem_path_label.setText(f"DEM: {os.path.basename(file_path)}{coverage_note}")
                 
                 # Habilitar botón de generar perfiles solo cuando tenemos todos los archivos necesarios
                 self.check_required_files()
                 
-                # Show DEM info
+                # Show DEM info in label (sin popup)
                 info_text = f"Dimensiones: {dem_info['cols']} x {dem_info['rows']}\n"
                 info_text += f"Resolución: {dem_info['cellsize']:.2f}m\n"
-                info_text += f"Extensión: X({dem_info['xmin']:.2f}, {dem_info['xmax']:.2f}) Y({dem_info['ymin']:.2f}, {dem_info['ymax']:.2f})"
+                info_text += f"Extension: X({dem_info['xmin']:.1f}, {dem_info['xmax']:.1f})  Y({dem_info['ymin']:.1f}, {dem_info['ymax']:.1f})"
                 self.dem_info_label.setText(info_text)
                 
             except Exception as e:
                 QMessageBox.warning(
                     self,
                     "Error",
-                    f"No se pudo validar el DEM: {str(e)}"
+                    f"No se pudo cargar el DEM: {str(e)}"
                 )
                 
     def browse_ecw_file(self):
@@ -185,8 +205,11 @@ class RevanchasLTDialog(QtWidgets.QDialog, FORM_CLASS):
                     )
                     return
                 
-                # ✅ VALIDAR COBERTURA DE LA ALINEACIÓN
-                if self.selected_wall:
+                # VALIDAR COBERTURA DE LA ALINEACIÓN
+                coverage_note = ""
+                if not self.selected_wall:
+                    coverage_note = " (sin validar)"
+                else:
                     from .core.dem_validator import DEMValidator
                     
                     alignment = self.alignment_data.get_alignment(self.selected_wall)
@@ -201,38 +224,46 @@ class RevanchasLTDialog(QtWidgets.QDialog, FORM_CLASS):
                     }
                     
                     validation = DEMValidator.validate_dem_coverage(ecw_info, alignment)
+                    coverage_pct = DEMValidator.calculate_coverage_percentage(ecw_info, alignment)
                     
                     if not validation['coverage_ok']:
-                        # ❌ ECW NO CUBRE LA ALINEACIÓN
-                        QMessageBox.critical(
+                        uncovered = DEMValidator.get_uncovered_stations(ecw_info, alignment)
+                        missing = validation['missing_coverage']
+                        
+                        reply = QMessageBox.warning(
                             self,
-                            "Error - Ortomosaico Insuficiente",
-                            f"El ortomosaico seleccionado NO cubre la alineación del {self.selected_wall}.\n\n"
-                            f"🎯 Área requerida (con buffer 50m):\n"
-                            f"X: {validation['alignment_bounds']['xmin']:.1f} - {validation['alignment_bounds']['xmax']:.1f}\n"
-                            f"Y: {validation['alignment_bounds']['ymin']:.1f} - {validation['alignment_bounds']['ymax']:.1f}\n\n"
-                            f"📍 Ortomosaico disponible:\n"
-                            f"X: {validation['dem_bounds']['xmin']:.1f} - {validation['dem_bounds']['xmax']:.1f}\n"
-                            f"Y: {validation['dem_bounds']['ymin']:.1f} - {validation['dem_bounds']['ymax']:.1f}\n\n"
-                            f"❌ Seleccione un ortomosaico que cubra completamente la zona del muro."
+                            "Advertencia - Cobertura ortomosaico parcial",
+                            f"El ortomosaico no cubre completamente la alineación del {self.selected_wall}.\n\n"
+                            f"Cobertura: {coverage_pct:.1f}% de las estaciones "
+                            f"({validation['stations_count'] - len(uncovered)}/{validation['stations_count']})\n\n"
+                            f"Area requerida (buffer 50m):\n"
+                            f"  X: {validation['alignment_bounds']['xmin']:.1f} - {validation['alignment_bounds']['xmax']:.1f}\n"
+                            f"  Y: {validation['alignment_bounds']['ymin']:.1f} - {validation['alignment_bounds']['ymax']:.1f}\n\n"
+                            f"Ortomosaico disponible:\n"
+                            f"  X: {validation['dem_bounds']['xmin']:.1f} - {validation['dem_bounds']['xmax']:.1f}\n"
+                            f"  Y: {validation['dem_bounds']['ymin']:.1f} - {validation['dem_bounds']['ymax']:.1f}\n\n"
+                            f"Deficit X: {missing['x_deficit']:.1f}m   Deficit Y: {missing['y_deficit']:.1f}m\n\n"
+                            f"Las zonas fuera del ortomosaico no tendran imagen de fondo.\n"
+                            f"¿Desea continuar de todas formas?",
+                            QMessageBox.Yes | QMessageBox.No,
+                            QMessageBox.No
                         )
-                        return  # ❌ NO continuar si ECW no es válido
-                    
-                    # ✅ ECW válido - mostrar confirmación
-                    QMessageBox.information(
-                        self,
-                        "✅ Ortomosaico Validado",
-                        f"El ortomosaico cubre correctamente la alineación del {self.selected_wall}."
-                    )
+                        
+                        if reply == QMessageBox.No:
+                            return
+                        
+                        coverage_note = f" ⚠ Cobertura parcial ({coverage_pct:.0f}%)"
+                    else:
+                        coverage_note = f" ✓ Cubre alineacion ({coverage_pct:.0f}%)"
                 
-                # ✅ Continuar con carga normal
+                # Continuar con carga normal
                 self.ecw_file_path = file_path
-                self.ecw_path_label.setText(f"ECW: {os.path.basename(file_path)}")
+                self.ecw_path_label.setText(f"ECW: {os.path.basename(file_path)}{coverage_note}")
                 
                 # Habilitar botón de generar perfiles solo cuando tenemos todos los archivos necesarios
                 self.check_required_files()
                 
-                # Show ECW info
+                # Show ECW info (sin popup)
                 extent = ecw_layer.extent()
                 width = ecw_layer.width()
                 height = ecw_layer.height()
@@ -240,16 +271,16 @@ class RevanchasLTDialog(QtWidgets.QDialog, FORM_CLASS):
                 pixel_size_x = (extent.xMaximum() - extent.xMinimum()) / width
                 pixel_size_y = (extent.yMaximum() - extent.yMinimum()) / height
                 
-                info_text = f"Dimensiones: {width} x {height} píxeles\n"
-                info_text += f"Resolución: {pixel_size_x:.2f}m/px\n"
-                info_text += f"Extensión: X({extent.xMinimum():.2f}, {extent.xMaximum():.2f}) Y({extent.yMinimum():.2f}, {extent.yMaximum():.2f})"
+                info_text = f"Dimensiones: {width} x {height} pixeles\n"
+                info_text += f"Resolucion: {pixel_size_x:.2f}m/px\n"
+                info_text += f"Extension: X({extent.xMinimum():.1f}, {extent.xMaximum():.1f})  Y({extent.yMinimum():.1f}, {extent.yMaximum():.1f})"
                 self.ecw_info_label.setText(info_text)
                 
             except Exception as e:
                 QMessageBox.warning(
                     self,
                     "Error",
-                    f"No se pudo validar el ortomosaico: {str(e)}"
+                    f"No se pudo cargar el ortomosaico: {str(e)}"
                 )
                 
     def check_required_files(self):
