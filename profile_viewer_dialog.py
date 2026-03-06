@@ -3014,24 +3014,26 @@ class InteractiveProfileViewer(QDialog):
         available_height_px = frame_height_px - header_height_px
         
         # Calcular altura POR FILA para llenar exactamente el espacio
+        if total_rows == 0:
+            total_rows = 1
         row_height_px = available_height_px / total_rows
         
-        # Determinar font-size base según cantidad de filas (legibilidad)
+        # Determinar font-size base según cantidad de filas (legibilidad adaptada a columnas nuevas más anchas)
         if total_rows > 80:
-            base_font_px = 6    # Mínimo para legibilidad
+            base_font_px = 5.5
         elif total_rows > 60:
-            base_font_px = 7
+            base_font_px = 6.5
         elif total_rows > 40:
-            base_font_px = 8
+            base_font_px = 7.5
         elif total_rows > 25:
-            base_font_px = 9
+            base_font_px = 8.5
         else:
-            base_font_px = 10
+            base_font_px = 9.5
         
         # Calcular padding para llenar la altura de fila
         # row_height = font_size * line_height + (padding_top + padding_bottom) + border
-        line_height = 1.2
-        border_height = 2  # 1px arriba + 1px abajo
+        line_height = 1.1
+        border_height = 1  # 1px abajo
         content_height = base_font_px * line_height
         remaining_space = row_height_px - content_height - border_height
         padding_vertical_px = max(0, remaining_space / 2)  # Top + bottom
@@ -3039,7 +3041,7 @@ class InteractiveProfileViewer(QDialog):
         # Convertir a valores CSS
         font_size = f"{base_font_px}px"
         padding_vertical = f"{padding_vertical_px:.1f}px"
-        padding_horizontal = "2px"  # Fijo para no hacer muy ancho
+        padding_horizontal = "1px"  # Reducido al máximo para ahorrar espacio horizontal
         
         print(f"   🎨 Cálculo Fill Dinámico:")
         print(f"      • Altura Frame: {frame_height_mm}mm ({frame_height_px:.0f}px)")
@@ -3065,41 +3067,32 @@ class InteractiveProfileViewer(QDialog):
             th {{ 
                 background-color: #EF7F1A; 
                 color: white; 
-                padding: 3px {padding_horizontal}; 
+                padding: 1px {padding_horizontal}; 
                 border: 1px solid #ddd; 
                 text-align: center; 
                 font-weight: bold; 
-                white-space: nowrap; 
             }}
             td {{ 
                 padding: {padding_final}; 
                 border: 1px solid #ddd; 
-                text-align: left; 
-                white-space: nowrap; 
+                text-align: center; 
                 line-height: {line_height_final};
                 height: {row_height_px:.1f}px;
             }}
             tr {{ page-break-inside: auto; }}
             tbody tr:nth-child(even) {{ background-color: #f8f9fa; }}
             .geo-col {{ background-color: #f9f9f9; }}
-            /* Colores por Rango - Revancha */
-            .rev-green {{ color: #2e7d32; font-weight: bold; }}
-            .rev-yellow {{ color: #f57f17; font-weight: bold; }}
-            .rev-red {{ color: #c62828; font-weight: bold; }}
-            /* Colores por Rango - Ancho */
-            .ancho-green {{ color: #2e7d32; font-weight: bold; }}
-            .ancho-yellow {{ color: #f57f17; font-weight: bold; }}
-            .ancho-red {{ color: #c62828; font-weight: bold; }}
-            /* Colores por Rango - Geomembrana */
-            .geo-yellow {{ color: #f57f17; font-weight: bold; }}
-            .geo-red {{ color: #c62828; font-weight: bold; }}
+            /* Colores por Rango - Semáforo en Fondo de celda */
+            .bg-green {{ background-color: #4CAF50 !important; color: white !important; font-weight: bold; text-shadow: 1px 1px 1px rgba(0,0,0,0.3); }}
+            .bg-yellow {{ background-color: #FFC107 !important; color: black !important; font-weight: bold; }}
+            .bg-red {{ background-color: #F44336 !important; color: white !important; font-weight: bold; text-shadow: 1px 1px 1px rgba(0,0,0,0.3); }}
         </style>
         """
         
         html = [style, "<table>"]
         
-        # Headers (Reverted to Full Names)
-        headers = ["Sector", "PK", "Coronam.", "Revancha", "Lama", "Ancho", "Geomemb.", "D. G-L", "D. G-C"]
+        # Headers (Reverted to Full Names and added metric units)
+        headers = ["Sector", "PK", "Coronamiento (m)", "Revancha (m)", "Lama (m)", "Ancho (m)", "Geomemb. (m)", "Dist. G-L (m)", "Dist. G-C (m)"]
         html.append("<thead><tr>")
         for h in headers:
             html.append(f"<th>{h}</th>")
@@ -3145,30 +3138,36 @@ class InteractiveProfileViewer(QDialog):
             
             # Revancha con colores por rango
             revancha_txt = "-"
+            revancha_cls = ""
             if revancha_val is not None:
+                revancha_txt = f"{revancha_val:.3f}"
                 if revancha_val > 3.5:
-                    revancha_txt = f"<span class='rev-green'>{revancha_val:.3f}</span>"
+                    revancha_cls = "bg-green"
                 elif revancha_val >= 3.0:
-                    revancha_txt = f"<span class='rev-yellow'>{revancha_val:.3f}</span>"
+                    revancha_cls = "bg-yellow"
                 else:
-                    revancha_txt = f"<span class='rev-red'>{revancha_val:.3f}</span>"
+                    revancha_cls = "bg-red"
             
             lama_txt = f"{lama_val:.3f}" if lama_val is not None else "-"
             
             # Ancho con colores por rango
             ancho_txt = "-"
+            ancho_cls = ""
             if width_val is not None:
+                ancho_txt = f"{width_val:.3f}"
                 if width_val > 18.0:
-                    ancho_txt = f"<span class='ancho-green'>{width_val:.3f}</span>"
+                    ancho_cls = "bg-green"
                 elif width_val >= 15.0:
-                    ancho_txt = f"<span class='ancho-yellow'>{width_val:.3f}</span>"
+                    ancho_cls = "bg-yellow"
                 else:
-                    ancho_txt = f"<span class='ancho-red'>{width_val:.3f}</span>"
+                    ancho_cls = "bg-red"
             
             # Geo columns con colores por rango
             geo_txt = "-"
             dgl_txt = "-"
             dgc_txt = "-"
+            dgl_cls = "geo-col"
+            dgc_cls = "geo-col"
             
             if geomembrane_val is not None:
                 geo_txt = f"{geomembrane_val:.3f}"  # Sin color, valor de referencia
@@ -3176,34 +3175,36 @@ class InteractiveProfileViewer(QDialog):
                 # D. G-L (Geomembrana - Lama) con colores
                 if lama_val is not None:
                     dgl_val = geomembrane_val - lama_val
+                    dgl_txt = f"{dgl_val:.3f}"
                     if dgl_val > 1.0:
-                        dgl_txt = f"{dgl_val:.3f}"  # Normal (negro)
+                        pass
                     elif dgl_val >= 0.5:
-                        dgl_txt = f"<span class='geo-yellow'>{dgl_val:.3f}</span>"
+                        dgl_cls = "bg-yellow geo-col"
                     else:
-                        dgl_txt = f"<span class='geo-red'>{dgl_val:.3f}</span>"
+                        dgl_cls = "bg-red geo-col"
                 
                 # D. G-C (Coronamiento - Geomembrana) con colores
                 if crown_val is not None:
                     dgc_val = crown_val - geomembrane_val
+                    dgc_txt = f"{dgc_val:.3f}"
                     if dgc_val > 1.0:
-                        dgc_txt = f"{dgc_val:.3f}"  # Normal (negro)
+                        pass
                     elif dgc_val >= 0.5:
-                        dgc_txt = f"<span class='geo-yellow'>{dgc_val:.3f}</span>"
+                        dgc_cls = "bg-yellow geo-col"
                     else:
-                        dgc_txt = f"<span class='geo-red'>{dgc_val:.3f}</span>"
+                        dgc_cls = "bg-red geo-col"
 
             # Add Row
             html.append(f"<tr>")
             html.append(f"<td>{sector_txt}</td>")
             html.append(f"<td>{pk_txt}</td>")
             html.append(f"<td>{coronamiento_txt}</td>")
-            html.append(f"<td>{revancha_txt}</td>")
+            html.append(f"<td class='{revancha_cls}'>{revancha_txt}</td>")
             html.append(f"<td>{lama_txt}</td>")
-            html.append(f"<td>{ancho_txt}</td>")
+            html.append(f"<td class='{ancho_cls}'>{ancho_txt}</td>")
             html.append(f"<td class='geo-col'>{geo_txt}</td>")
-            html.append(f"<td class='geo-col'>{dgl_txt}</td>")
-            html.append(f"<td class='geo-col'>{dgc_txt}</td>")
+            html.append(f"<td class='{dgl_cls}'>{dgl_txt}</td>")
+            html.append(f"<td class='{dgc_cls}'>{dgc_txt}</td>")
             html.append(f"</tr>")
             
         html.append("</tbody></table>")
@@ -3341,14 +3342,10 @@ class InteractiveProfileViewer(QDialog):
             .summary-table tr:nth-child(even) { background-color: #f8f9fa; }
             .sub-header { background-color: #e6e6e6; font-size: 7px; }
             .sector-col { font-weight: bold; color: #2b579a; }
-            /* Colores por Rango - Revancha */
-            .rev-green { color: #2e7d32; font-weight: bold; }
-            .rev-yellow { color: #f57f17; font-weight: bold; }
-            .rev-red { color: #c62828; font-weight: bold; }
-            /* Colores por Rango - Ancho */
-            .ancho-green { color: #2e7d32; font-weight: bold; }
-            .ancho-yellow { color: #f57f17; font-weight: bold; }
-            .ancho-red { color: #c62828; font-weight: bold; }
+            /* Colores por Rango - Semáforo en Fondo de celda */
+            .bg-green { background-color: #4CAF50 !important; color: white !important; font-weight: bold; }
+            .bg-yellow { background-color: #FFC107 !important; color: black !important; font-weight: bold; }
+            .bg-red { background-color: #F44336 !important; color: white !important; font-weight: bold; }
         </style>
         """
         
@@ -3382,47 +3379,147 @@ class InteractiveProfileViewer(QDialog):
         sorted_sector_names = sorted(sectors_data.keys(), key=sort_key)
         
         def fmt(val_list, value_type='normal'):
-            """Formatea valor con PK, aplicando colores según tipo y rango"""
+            """Formatea valor con PK, devolviendo HTML texto y clase CSS."""
             val, pk = val_list
-            if val is None: return "-"
+            if val is None: return "-", ""
+            
+            txt = f"{val:.3f} ({pk})"
+            cls = ""
             
             # Aplicar colores según tipo de valor
             if value_type == 'revancha':
-                if val > 3.5:
-                    return f"<span class='rev-green'>{val:.3f}</span> ({pk})"
-                elif val >= 3.0:
-                    return f"<span class='rev-yellow'>{val:.3f}</span> ({pk})"
-                else:
-                    return f"<span class='rev-red'>{val:.3f}</span> ({pk})"
+                if val > 3.5: cls = "bg-green"
+                elif val >= 3.0: cls = "bg-yellow"
+                else: cls = "bg-red"
             elif value_type == 'ancho':
-                if val > 18.0:
-                    return f"<span class='ancho-green'>{val:.3f}</span> ({pk})"
-                elif val >= 15.0:
-                    return f"<span class='ancho-yellow'>{val:.3f}</span> ({pk})"
-                else:
-                    return f"<span class='ancho-red'>{val:.3f}</span> ({pk})"
-            else:
-                return f"{val:.3f} ({pk})"
+                if val > 18.0: cls = "bg-green"
+                elif val >= 15.0: cls = "bg-yellow"
+                else: cls = "bg-red"
+                
+            return txt, cls
 
         for sec_name in sorted_sector_names:
             stats = sectors_data[sec_name]
             
+            rev_min_txt, rev_min_cls = fmt(stats['min_rev'], 'revancha')
+            rev_max_txt, rev_max_cls = fmt(stats['max_rev'], 'revancha')
+            ancho_min_txt, ancho_min_cls = fmt(stats['min_ancho'], 'ancho')
+            ancho_max_txt, ancho_max_cls = fmt(stats['max_ancho'], 'ancho')
+            crown_min_txt, crown_min_cls = fmt(stats['min_crown'])
+            crown_max_txt, crown_max_cls = fmt(stats['max_crown'])
+            
             html.append("<tr>")
             html.append(f"<td class='sector-col'>{sec_name}</td>")
             
-            html.append(f"<td>{fmt(stats['min_rev'], 'revancha')}</td>")
-            html.append(f"<td>{fmt(stats['max_rev'], 'revancha')}</td>")
+            html.append(f"<td class='{rev_min_cls}'>{rev_min_txt}</td>")
+            html.append(f"<td class='{rev_max_cls}'>{rev_max_txt}</td>")
             
-            html.append(f"<td>{fmt(stats['min_ancho'], 'ancho')}</td>")
-            html.append(f"<td>{fmt(stats['max_ancho'], 'ancho')}</td>")
+            html.append(f"<td class='{ancho_min_cls}'>{ancho_min_txt}</td>")
+            html.append(f"<td class='{ancho_max_cls}'>{ancho_max_txt}</td>")
             
-            html.append(f"<td>{fmt(stats['min_crown'])}</td>")
-            html.append(f"<td>{fmt(stats['max_crown'])}</td>")
+            html.append(f"<td class='{crown_min_cls}'>{crown_min_txt}</td>")
+            html.append(f"<td class='{crown_max_cls}'>{crown_max_txt}</td>")
             
             html.append("</tr>")
             
         html.append("</tbody></table>")
         return "".join(html)
+
+    def generate_legends_html(self):
+        """Generates the color indicator legends matching the main report aesthetics using a bullet-proof nested table layout."""
+        return """
+        <style>
+            .container-table {
+                width: 100%;
+                border-collapse: collapse;
+                border: none;
+                font-family: Arial, sans-serif;
+                margin: 0;
+                padding: 0;
+            }
+            .container-table > tbody > tr > td {
+                width: 33.3%;
+                padding: 0 4px 0 0;
+                vertical-align: top;
+                border: none;
+            }
+            .container-table > tbody > tr > td:last-child {
+                padding-right: 0;
+            }
+            .legend-table {
+                width: 100%;
+                border-collapse: collapse;
+                border: 1px solid #ddd;
+            }
+            .legend-table th {
+                background-color: #EF7F1A;
+                color: white;
+                font-size: 6px;
+                font-weight: bold;
+                padding: 2px;
+                border: 1px solid #ddd;
+                text-align: center;
+                white-space: nowrap;
+            }
+            .legend-table td {
+                font-size: 5px;
+                padding: 2px;
+                border: 1px solid #ddd;
+                text-align: left;
+                color: black;
+                white-space: nowrap;
+            }
+            .status-cell {
+                text-align: center !important;
+                font-weight: bold;
+                width: 50%;
+            }
+            /* Sync with main table colors */
+            .bg-green { background-color: #4CAF50 !important; color: white !important; }
+            .bg-yellow { background-color: #FFC107 !important; color: black !important; }
+            .bg-red { background-color: #F44336 !important; color: white !important; }
+            .bg-blue { background-color: #b4c6e7 !important; color: black !important; }
+        </style>
+        <table class="container-table">
+            <tbody>
+                <tr>
+                    <!-- Block 1: Revancha -->
+                    <td>
+                        <table class="legend-table">
+                            <thead><tr><th colspan="2">Revancha</th></tr></thead>
+                            <tbody>
+                                <tr><td>> 3.5m</td><td class="status-cell bg-green">Favorable</td></tr>
+                                <tr><td>3.0 - 3.5m</td><td class="status-cell bg-yellow">Estable</td></tr>
+                                <tr><td>< 3.0m</td><td class="status-cell bg-red">Critico</td></tr>
+                            </tbody>
+                        </table>
+                    </td>
+                    <!-- Block 2: Anchos -->
+                    <td>
+                        <table class="legend-table">
+                            <thead><tr><th colspan="2">Anchos</th></tr></thead>
+                            <tbody>
+                                <tr><td>> 18m</td><td class="status-cell bg-green">Favorable</td></tr>
+                                <tr><td>15 - 18m</td><td class="status-cell bg-yellow">Estable</td></tr>
+                                <tr><td>< 15m</td><td class="status-cell bg-red">Critico</td></tr>
+                            </tbody>
+                        </table>
+                    </td>
+                    <!-- Block 3: Geomembrana -->
+                    <td>
+                        <table class="legend-table">
+                            <thead><tr><th colspan="2">Geomembrana</th></tr></thead>
+                            <tbody>
+                                <tr><td>> 1.0m</td><td class="status-cell bg-blue">Favorable</td></tr>
+                                <tr><td>0.5 - 1.0m</td><td class="status-cell bg-yellow">Estable</td></tr>
+                                <tr><td>< 0.5m</td><td class="status-cell bg-red">Critico</td></tr>
+                            </tbody>
+                        </table>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+        """
 
     def export_pdf_report(self):
         """Generate PDF report using QPT Template and Dynamic Screenshots"""
@@ -3501,8 +3598,26 @@ class InteractiveProfileViewer(QDialog):
 
             # 4. Generate Assets (Chart & Tables)
             import tempfile
+            import shutil
+            from qgis.PyQt.QtWidgets import QProgressDialog
+            from qgis.PyQt.QtCore import Qt
             
-            temp_dir = tempfile.gettempdir()
+            # 🆕 Crear carpeta temporal segura y única para esta ejecución
+            temp_dir = tempfile.mkdtemp(prefix="revanchas_pdf_")
+            
+            progress = QProgressDialog("Inicializando reporte...", "Cancelar", 0, 100, self)
+            progress.setWindowTitle("Generación Reporte PDF")
+            progress.setWindowModality(Qt.WindowModal)
+            progress.setMinimumDuration(0)
+            progress.setValue(5)
+            QApplication.processEvents()
+            
+            if progress.wasCanceled(): return
+            
+            progress.setLabelText("Generando tablas base...")
+            progress.setValue(10)
+            QApplication.processEvents()
+
             chart_path = os.path.join(temp_dir, "temp_profile_chart.png")
             
             if not self.generate_longitudinal_chart(chart_path):
@@ -3656,6 +3771,11 @@ class InteractiveProfileViewer(QDialog):
                 chart_item.setPicturePath(chart_path)
             
             # Map Generation (NEW)
+            if progress.wasCanceled(): return
+            progress.setLabelText("Generando mapa topográfico y base...")
+            progress.setValue(30)
+            QApplication.processEvents()
+
             try:
                 # Recuperar datos del diálogo principal
                 main_dialog = self.parent()
@@ -3732,6 +3852,32 @@ class InteractiveProfileViewer(QDialog):
             else:
                 print(f"⚠️ detail_table no encontrado o no es Frame: {type(detail_frame)}")
 
+            # Color Legends (Indicadores)
+            legends_html = self.generate_legends_html()
+            # Try to find a frame named 'color_legends'
+            legends_frame = layout.itemById('color_legends')
+            if legends_frame:
+                final_legends_html = f"<html><head><meta charset='UTF-8'></head><body style='margin: 0;'>{legends_html}</body></html>"
+                if isinstance(legends_frame, QgsLayoutFrame):
+                    legends_mf = legends_frame.multiFrame()
+                    if isinstance(legends_mf, QgsLayoutItemHtml):
+                        print(f"🎨 Injecting Color Legends into QgsLayoutFrame (Length: {len(final_legends_html)})")
+                        legends_mf.setContentMode(QgsLayoutItemHtml.ManualHtml)
+                        legends_mf.setHtml(final_legends_html)
+                        legends_mf.loadHtml()
+                elif isinstance(legends_frame, QgsLayoutItemHtml):
+                    print(f"🎨 Injecting Color Legends into QgsLayoutItemHtml (Length: {len(final_legends_html)})")
+                    legends_frame.setContentMode(QgsLayoutItemHtml.ManualHtml)
+                    legends_frame.setHtml(final_legends_html)
+                    legends_frame.loadHtml()
+            else:
+                print(f"⚠️ Item 'color_legends' no encontrado en el QPT. La leyenda de colores no será renderizada explícitamente.")
+
+            if progress.wasCanceled(): return
+            progress.setLabelText("Renderizando diseño y tablas HTML...")
+            progress.setValue(60)
+            QApplication.processEvents()
+
             # CRITICAL: Force HTML processing before export
             # HTML tables need time to render, otherwise they appear blank in PDF
             print("⏳ Procesando HTML de tablas...")
@@ -3745,6 +3891,11 @@ class InteractiveProfileViewer(QDialog):
             layout.refresh()
             QApplication.processEvents()  # Process refresh events
             print("✅ HTML procesado, continuando con export...")
+
+            if progress.wasCanceled(): return
+            progress.setLabelText("Detectando alertas y filtrando perfiles...")
+            progress.setValue(70)
+            QApplication.processEvents()
 
             # 6. Dynamic Screenshots (Pages 2+)
             # Detect Alerts
@@ -3802,6 +3953,13 @@ class InteractiveProfileViewer(QDialog):
                         
                     pk = alert_profiles[i]
                     
+                    if progress.wasCanceled(): return
+                    # Actualizar progreso
+                    progress.setLabelText(f"Generando captura {i+1} de {len(alert_profiles)}...")
+                    prog_val = 70 + int(((i + 1) / len(alert_profiles)) * 20)  # Hasta el 90%
+                    progress.setValue(prog_val)
+                    QApplication.processEvents()
+
                     # Generate screenshot
                     self.current_pk = pk
                     for p_idx, p in enumerate(self.profiles_data):
@@ -3856,6 +4014,11 @@ class InteractiveProfileViewer(QDialog):
             else:
                 print(f"📋 No hay páginas que limpiar (Necesarias: {alert_pages_needed}, Actuales: {total_pages_now - first_alert_page_idx} de alertas)")
             
+            if progress.wasCanceled(): return
+            progress.setLabelText("Generando gráficos finales...")
+            progress.setValue(93)
+            QApplication.processEvents()
+
             # 🆕 Generate Longitudinal Chart (Before Export)
             try:
                 from .core.report_generator import ReportGenerator
@@ -3882,9 +4045,17 @@ class InteractiveProfileViewer(QDialog):
                 import traceback
                 traceback.print_exc()
 
+            if progress.wasCanceled(): return
+            progress.setLabelText("Exportando a archivo PDF...")
+            progress.setValue(98)
+            QApplication.processEvents()
+
             # 7. Export
             exporter = QgsLayoutExporter(layout)
             result = exporter.exportToPdf(filename, QgsLayoutExporter.PdfExportSettings())
+
+            progress.setValue(100)
+            QApplication.processEvents()
             
             if result == QgsLayoutExporter.Success:
                 QMessageBox.information(self, "Éxito", f"Reporte PDF generado correctamente en:\n{filename}")
@@ -3899,6 +4070,16 @@ class InteractiveProfileViewer(QDialog):
             import traceback
             traceback.print_exc()
             QMessageBox.critical(self, "Error", f"Error generando reporte: {str(e)}")
+        finally:
+            if 'progress' in locals() and progress is not None:
+                progress.close()
+            if 'temp_dir' in locals() and os.path.exists(temp_dir):
+                try:
+                    import shutil
+                    shutil.rmtree(temp_dir)
+                    print(f"🧹 Recursos temporales limpiados: {temp_dir}")
+                except Exception as e:
+                    print(f"⚠️ Error limpiando temporales: {e}")
 
     def generate_dev_map(self):
         """🆕 Método DEV para probar generación de mapas rápidamente"""
