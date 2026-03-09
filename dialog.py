@@ -682,6 +682,8 @@ class RevanchasLTDialog(QtWidgets.QDialog, FORM_CLASS):
                 saved_measurements=saved_measurements,
                 operation_mode=operation_mode,
                 auto_width_detection=auto_width_detection,
+                prev_dem_path=self.previous_dem_file_path,
+                excel_path=self.excel_file_path,
                 parent_widget=self
             )
             
@@ -739,9 +741,11 @@ class RevanchasLTDialog(QtWidgets.QDialog, FORM_CLASS):
             # Restore project state
             self.dem_file_path = file_paths.get('dem_path')
             self.ecw_file_path = file_paths.get('ecw_path')
+            self.previous_dem_file_path = file_paths.get('prev_dem_path')
+            self.excel_file_path = file_paths.get('excel_path')
             self.selected_wall = project_settings.get('wall_name')
             
-            print(f"🎯 Estado restaurado: muro={self.selected_wall}, dem={bool(self.dem_file_path)}, ecw={bool(self.ecw_file_path)}")
+            print(f"🎯 Estado restaurado: muro={self.selected_wall}, dem={bool(self.dem_file_path)}, ecw={bool(self.ecw_file_path)}, prev_dem={bool(self.previous_dem_file_path)}, excel={bool(self.excel_file_path)}")
             
             # Update UI elements
             if hasattr(self, 'dem_path_label') and self.dem_file_path:
@@ -771,6 +775,14 @@ class RevanchasLTDialog(QtWidgets.QDialog, FORM_CLASS):
                 if wall_index >= 0:
                     self.wall_combo.setCurrentIndex(wall_index)
                     print(f"🎯 Wall combo actualizado al índice {wall_index}")
+                    
+            if hasattr(self, 'prev_dem_path_label') and self.previous_dem_file_path:
+                self.prev_dem_path_label.setText(f"DEM Ant: {os.path.basename(self.previous_dem_file_path)}")
+                self.prev_dem_path_label.setStyleSheet("color: green;")
+                
+            if hasattr(self, 'excel_path_label') and self.excel_file_path:
+                self.excel_path_label.setText(f"Excel: {os.path.basename(self.excel_file_path)}")
+                self.excel_path_label.setStyleSheet("color: blue; font-weight: bold;")
             
             # Cache the loaded measurements for future save operations
             if measurements_data:

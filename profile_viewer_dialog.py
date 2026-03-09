@@ -757,7 +757,7 @@ class InteractiveProfileViewer(QDialog):
         self.map_max_spin = QDoubleSpinBox()
         self.map_max_spin.setRange(0.0, 100.0)
         self.map_max_spin.setSingleStep(0.1)
-        self.map_max_spin.setValue(0.0) # 0 = Auto
+        self.map_max_spin.setValue(0.5) # Default 0.5m per user request
         self.map_max_spin.setDecimals(2)
         self.map_max_spin.setSpecialValueText("Auto")
         self.map_max_spin.setToolTip("Valor máximo para la escala de colores (0 = Auto)")
@@ -2147,10 +2147,11 @@ class InteractiveProfileViewer(QDialog):
                             linewidth=2.5, alpha=0.9, label=f'Ancho {label_prefix}: {width_data["distance"]:.2f}m', zorder=4)
             else:
                 # Modo Revancha (lógica original)
-                # En export_mode, NO dibujar punto de coronamiento (rojo)
-                if 'crown' in measurements and not export_mode:
+                if 'crown' in measurements:
                     crown_data = measurements['crown']
-                    self.ax.plot(crown_data['x'], crown_data['y'], 'ro', markersize=10, 
+                    # Dibujar punto de coronamiento (azul intenso con borde negro) siempre
+                    self.ax.plot(crown_data['x'], crown_data['y'], 'o', color='#0000FF', markersize=12, 
+                            markeredgecolor='black', markeredgewidth=1.5,
                             label=f'Cota Coronamiento: {crown_data["y"]:.2f}m', zorder=4)
                 
                 # Width measurement with auto-detection indicator
@@ -2217,11 +2218,11 @@ class InteractiveProfileViewer(QDialog):
             # 📸 LEYENDA SIMPLIFICADA PARA PANTALLAZOS DE ALERTAS
             legend_lines = []
             
-            # 1. Cota Coronamiento (línea verde)
+            # 1. Cota Coronamiento (punto azul intenso)
             crown_val = None
             if current_pk in self.saved_measurements and 'crown' in self.saved_measurements[current_pk]:
                 crown_val = self.saved_measurements[current_pk]['crown']['y']
-                legend_lines.append(f"─ Cota Coronamiento: {crown_val:.2f} m")
+                legend_lines.append(f"● Cota Coronamiento: {crown_val:.2f} m")
             
             # 2. Cota Lama (punto naranja)
             lama_val = None
@@ -2259,7 +2260,7 @@ class InteractiveProfileViewer(QDialog):
                 
                 # Cota Coronamiento
                 if crown_val is not None:
-                     pack_items.append(TextArea(f"─ Cota Coronamiento: {crown_val:.2f} m", textprops=dict(color='black', size=11, family='monospace')))
+                     pack_items.append(TextArea(f"● Cota Coronamiento: {crown_val:.2f} m", textprops=dict(color='blue', size=11, family='monospace')))
 
                 # Cota Lama
                 if lama_val is not None:
@@ -3928,27 +3929,67 @@ class InteractiveProfileViewer(QDialog):
                 print(f"📸 Detectadas {len(alert_profiles)} alertas, generando screenshots...")
                     
                 # ENHANCED SYSTEM: Automatic slot discovery
-                # Instead of a hardcoded list, we find ALL items that start with 'alert_screenshot_'
-                # This lets the user add page after page in the QPT with more slots.
-                all_qpt_slots = []
+                profile_slots = []
+                planta_slots = []
                 for item in layout.items():
-                    if isinstance(item, QgsLayoutItemPicture) and item.id() and item.id().startswith('alert_screenshot_'):
-                        try:
-                            # Extraer el número del ID para ordenar correctamente
-                            num = int(item.id().replace('alert_screenshot_', ''))
-                            all_qpt_slots.append((num, item))
-                        except ValueError:
-                            continue
+                    if isinstance(item, QgsLayoutItemPicture) and item.id():
+                        if item.id().startswith('alert_screenshot_planta_'):
+                            try:
+                                num = int(item.id().replace('alert_screenshot_planta_', ''))
+                                planta_slots.append((num, item))
+                            except ValueError:
+                                continue
+                        elif item.id().startswith('alert_screenshot_'):
+                            try:
+                                num = int(item.id().replace('alert_screenshot_', ''))
+                                profile_slots.append((num, item))
+                            except ValueError:
+                                continue
                 
-                # Ordenar por número (1, 2, 3...)
-                all_qpt_slots.sort(key=lambda x: x[0])
-                print(f"🔎 Encontrados {len(all_qpt_slots)} espacios para capturas en el QPT.")
+                profile_slots.sort(key=lambda x: x[0])
+                planta_slots.sort(key=lambda x: x[0])
+                
+                print(f"🔎 Encontrados {len(profile_slots)} espacios de perfil y {len(planta_slots)} de planta en el QPT.")
                 
                 screenshots_placed = 0
+                plantas_placed = 0
+                
+                # Pre-cargar viewer temporal si hay slots de planta
+                temp_ortho_viewer = None
+                if planta_slots and self.ecw_file_path:
+                    try:
+                        from .orthomosaic_viewer import OrthomosaicViewer
+                        # Usar el primer perfil para inicializar
+                        first_pk = alert_profiles[0]
+                        first_prof = next((p for p in self.profiles_data if str(p.get('pk')) == first_pk), self.profiles_data[0])
+                        
+                        bearing = first_prof.get('bearing', 0)
+                        if 'station' in first_prof and 'alignment_type' in first_prof['station'] and first_prof['station']['alignment_type'] == 'curved':
+                            bearing = first_prof['station'].get('bearing_tangent', bearing)
+                            
+                        temp_ortho_viewer = OrthomosaicViewer(
+                            self.ecw_file_path,
+                            first_prof.get('centerline_x', 0),
+                            first_prof.get('centerline_y', 0),
+                            first_pk,
+                            self,
+                            bearing
+                        )
+                        temp_ortho_viewer.resize(800, 600)
+                        # Ocultamos la ventana de herramientas (toolbar)
+                        for child in temp_ortho_viewer.findChildren(QToolBar):
+                            child.hide()
+                        for child in temp_ortho_viewer.findChildren(QLabel):
+                            child.hide()
+                        for child in temp_ortho_viewer.findChildren(QStatusBar):
+                            child.hide()
+                    except Exception as e:
+                        print(f"⚠️ No se pudo inicializar visor de planta para alertas: {e}")
                 
                 # Step 1: Fill slots found in QPT
-                for i, (slot_num, qpt_item) in enumerate(all_qpt_slots):
-                    if i >= len(alert_profiles):
+                for i in range(len(alert_profiles)):
+                    # Si ya no quedan slots ni de perfil ni de planta, no procesar más
+                    if i >= len(profile_slots) and i >= len(planta_slots):
                         break
                         
                     pk = alert_profiles[i]
@@ -3960,28 +4001,164 @@ class InteractiveProfileViewer(QDialog):
                     progress.setValue(prog_val)
                     QApplication.processEvents()
 
-                    # Generate screenshot
+                    # Find profile data
                     self.current_pk = pk
+                    current_prof = None
                     for p_idx, p in enumerate(self.profiles_data):
                         if str(p.get('pk')) == pk:
                             self.current_profile_index = p_idx
+                            current_prof = p
                             break
-                    self.update_profile_display(export_mode=True)
-                    QApplication.processEvents()
                     
-                    # Save and inject
-                    screenshot_path = os.path.join(temp_dir, f"alert_{pk.replace('+','_')}.png")
-                    self.figure.savefig(screenshot_path)
-                    qpt_item.setPicturePath(screenshot_path)
-                    
-                    print(f"✅ Screenshot {i+1} inyectado en slot QPT '{qpt_item.id()}'")
-                    screenshots_placed += 1
+                    # 1. Generate and inject Profile Screenshot
+                    if i < len(profile_slots):
+                        qpt_item = profile_slots[i][1]
+                        self.update_profile_display(export_mode=True)
+                        QApplication.processEvents()
+                        
+                        screenshot_path = os.path.join(temp_dir, f"alert_{pk.replace('+','_')}.png")
+                        self.figure.savefig(screenshot_path)
+                        qpt_item.setPicturePath(screenshot_path)
+                        
+                        print(f"✅ Screenshot {i+1} inyectado en slot QPT '{qpt_item.id()}'")
+                        screenshots_placed += 1
+                        
+                    # 2. Generate and inject Planta (Ortho) Screenshot
+                    if i < len(planta_slots) and temp_ortho_viewer and current_prof:
+                        planta_item = planta_slots[i][1]
+                        
+                        try:
+                            # 1. Ajustar ratio de aspecto para llenar todo el elemento (evita bordes blancos)
+                            rect = planta_item.rect()
+                            w, h = rect.width(), rect.height()
+                            
+                            if w > 0 and h > 0:
+                                # Renderizamos a alta resolución (ej. 1500px ancho)
+                                base_width = 1500
+                                target_height = int(base_width * (h / w))
+                                temp_ortho_viewer.resize(base_width, target_height)
+                                
+                            # Actualizar viewer temporal
+                            temp_ortho_viewer.update_to_profile(current_prof)
+                            # Añadir mediciones
+                            measurements = self.saved_measurements.get(pk, {})
+                            temp_ortho_viewer.update_measurements_display(measurements)
+                            
+                            # 2. OCULTAR LA LÍNEA DEL PK Y RESALTAR ELEMENTOS
+                            if hasattr(temp_ortho_viewer, 'line_rubber') and temp_ortho_viewer.line_rubber:
+                                temp_ortho_viewer.line_rubber.hide()
+                            if hasattr(temp_ortho_viewer, 'center_cross_rubber') and temp_ortho_viewer.center_cross_rubber:
+                                temp_ortho_viewer.center_cross_rubber.hide()
+                            if hasattr(temp_ortho_viewer, 'centerline_rubber') and temp_ortho_viewer.centerline_rubber:
+                                temp_ortho_viewer.centerline_rubber.hide()
+                            
+                            # Resaltar puntos y líneas con mayor grosor para el pantallazo
+                            if hasattr(temp_ortho_viewer, 'crown_border_rubber') and temp_ortho_viewer.crown_border_rubber:
+                                temp_ortho_viewer.crown_border_rubber.setWidth(18)
+                            if hasattr(temp_ortho_viewer, 'crown_rubber') and temp_ortho_viewer.crown_rubber:
+                                temp_ortho_viewer.crown_rubber.setWidth(14)
+                            if hasattr(temp_ortho_viewer, 'lama_border_rubber') and temp_ortho_viewer.lama_border_rubber:
+                                temp_ortho_viewer.lama_border_rubber.setWidth(18)
+                            if hasattr(temp_ortho_viewer, 'lama_rubber') and temp_ortho_viewer.lama_rubber:
+                                temp_ortho_viewer.lama_rubber.setWidth(14)
+                            if hasattr(temp_ortho_viewer, 'width_rubber') and temp_ortho_viewer.width_rubber:
+                                temp_ortho_viewer.width_rubber.setWidth(8)
+                            
+                            # 3. OVERRIDE DEL ZOOM CENTRADO EN CORONAMIENTO
+                            # 3. OVERRIDE DEL ZOOM CENTRADO DINÁMICO (Bounding Box de Mediciones)
+                            pts_world_x = []
+                            pts_world_y = []
+                            
+                            crown = measurements.get('crown')
+                            if crown and 'x' in crown and 'y' in crown:
+                                cx, cy = temp_ortho_viewer._convert_profile_to_world_coords(crown['x'], crown['y'])
+                                pts_world_x.append(cx)
+                                pts_world_y.append(cy)
+                                
+                            lama = measurements.get('lama')
+                            if not lama:
+                                lama = measurements.get('lama_selected')
+                            if lama and 'x' in lama and 'y' in lama:
+                                lx, ly = temp_ortho_viewer._convert_profile_to_world_coords(lama['x'], lama['y'])
+                                pts_world_x.append(lx)
+                                pts_world_y.append(ly)
+                                
+                            width = measurements.get('width')
+                            if width and 'p1' in width and 'p2' in width:
+                                p1 = width['p1']
+                                p2 = width['p2']
+                                # Handle dict vs tuple Format
+                                x1, y1 = (p1['x'], p1['y']) if isinstance(p1, dict) else (p1[0], p1[1])
+                                x2, y2 = (p2['x'], p2['y']) if isinstance(p2, dict) else (p2[0], p2[1])
+                                w1x, w1y = temp_ortho_viewer._convert_profile_to_world_coords(x1, y1)
+                                w2x, w2y = temp_ortho_viewer._convert_profile_to_world_coords(x2, y2)
+                                pts_world_x.extend([w1x, w2x])
+                                pts_world_y.extend([w1y, w2y])
+                                
+                            if pts_world_x and len(pts_world_x) > 1:
+                                min_x, max_x = min(pts_world_x), max(pts_world_x)
+                                min_y, max_y = min(pts_world_y), max(pts_world_y)
+                                
+                                # Margen dinámico (15 metros min de padding extra alrededor de la caja)
+                                margin_x = max(15, (max_x - min_x) * 0.15)
+                                margin_y = max(15, (max_y - min_y) * 0.15)
+                                
+                                zoom_rect = QgsRectangle(
+                                    min_x - margin_x,
+                                    min_y - margin_y,
+                                    max_x + margin_x,
+                                    max_y + margin_y
+                                )
+                            else:
+                                center_x, center_y = temp_ortho_viewer.x_coord, temp_ortho_viewer.y_coord
+                                if pts_world_x:
+                                    center_x, center_y = pts_world_x[0], pts_world_y[0]
+                                margin = 15
+                                zoom_rect = QgsRectangle(
+                                    center_x - margin,
+                                    center_y - margin,
+                                    center_x + margin,
+                                    center_y + margin
+                                )
+                            temp_ortho_viewer.map_canvas.setExtent(zoom_rect)
+                            temp_ortho_viewer.map_canvas.refresh()
+                            
+                            # 4. FORZAR RENDERIZADO COMPLETO (Evita imágenes blancas cortadas)
+                            QApplication.processEvents()
+                            try:
+                                # Instruye a QGIS esperar a que todos los tiles terminen de cargar
+                                temp_ortho_viewer.map_canvas.waitWhileRendering()
+                            except Exception:
+                                pass
+                            
+                            import time
+                            # Pequeño loop de gracia para procesar eventos asíncronos restantes
+                            end_time = time.time() + 1.5
+                            while time.time() < end_time:
+                                QApplication.processEvents()
+                                time.sleep(0.05)
+                            
+                            ortho_img_path = os.path.join(temp_dir, f"alert_planta_{pk.replace('+','_')}.png")
+                            pixmap = temp_ortho_viewer.map_canvas.grab()
+                            pixmap.save(ortho_img_path)
+                            
+                            planta_item.setPicturePath(ortho_img_path)
+                            print(f"✅ Planta {i+1} inyectada en slot QPT '{planta_item.id()}'")
+                            plantas_placed += 1
+                        except Exception as e:
+                            print(f"⚠️ Falló captura de planta para {pk}: {e}")
+                
+                # Limpiar visor temporal
+                if temp_ortho_viewer:
+                    try:
+                        temp_ortho_viewer.close()
+                        temp_ortho_viewer.deleteLater()
+                    except Exception as e:
+                        print(f"⚠️ Error limpiando visor temporal: {e}")
                 
                 # Step 2: Inform if there are more alerts than slots in QPT
                 if screenshots_placed < len(alert_profiles):
-                    print(f"⚠️ AVISO: Quedaron {len(alert_profiles) - screenshots_placed} alertas sin espacio en el QPT.")
-                    # El usuario prefiere no crear hojas dinámicas "feas", 
-                    # así que solo avisamos para que añada más hojas al QPT si lo necesita.
+                    print(f"⚠️ AVISO: Quedaron {len(alert_profiles) - screenshots_placed} alertas sin espacio de perfil en el QPT.")
             
             # 🆕 LOGICA CONSOLIDADA DE LIMPIEZA DE PÁGINAS (Páginas 3+ / Índices 2+)
             # Esta lógica determina cuántas páginas de alertas se necesitan realmente

@@ -177,8 +177,54 @@ class OrthomosaicViewer(QDialog):
         # Set layout
         self.setLayout(main_layout)
         
+        # 🆕 Add legend overlay
+        self.legend_overlay = QLabel(self.map_canvas)
+        self.legend_overlay.setStyleSheet("""
+            QLabel {
+                background-color: rgba(255, 255, 255, 220);
+                border: 2px solid #999;
+                border-radius: 8px;
+                padding: 24px;
+                color: black;
+            }
+        """)
+        self.legend_overlay.setText(
+            "<table style='border-spacing: 0; margin: 0;'>"
+            "<tr>"
+            "   <td style='padding-right: 24px; padding-bottom: 15px;'><div style='width: 45px; height: 12px; background-color: #00FF00;'></div></td>"
+            "   <td style='font-size: 36px; padding-bottom: 15px;'>Ancho</td>"
+            "</tr>"
+            "<tr>"
+            "   <td style='padding-right: 24px; padding-bottom: 15px;'><div style='width: 36px; height: 36px; border-radius: 18px; background-color: #0000FF; border: 4px solid black;'></div></td>"
+            "   <td style='font-size: 36px; padding-bottom: 15px;'>Cota Coronamiento</td>"
+            "</tr>"
+            "<tr>"
+            "   <td style='padding-right: 24px;'><div style='width: 36px; height: 36px; border-radius: 18px; background-color: #FFA500; border: 6px solid red;'></div></td>"
+            "   <td style='font-size: 36px;'>Cota Lama</td>"
+            "</tr>"
+            "</table>"
+        )
+        self.legend_overlay.adjustSize()
+        self.legend_overlay.show()
+        
+        # Install event filter to keep it in the top right corner
+        self.map_canvas.installEventFilter(self)
+        
         # Activate pan tool by default
         self.activate_pan()
+        
+    def eventFilter(self, obj, event):
+        """Mantiene la leyenda en la esquina superior derecha al redimensionar"""
+        try:
+            from qgis.PyQt.QtCore import QEvent
+            if obj == self.map_canvas and event.type() == QEvent.Resize:
+                if hasattr(self, 'legend_overlay') and self.legend_overlay:
+                    x = self.map_canvas.width() - self.legend_overlay.width() - 10
+                    y = 10
+                    self.legend_overlay.move(x, y)
+        except Exception:
+            pass
+        return super().eventFilter(obj, event)
         
     def load_orthomosaic(self):
         """Load the ECW file and display it"""
@@ -630,9 +676,17 @@ class OrthomosaicViewer(QDialog):
                 self.lama_rubber.reset()
                 self.lama_rubber = None
                 
+            if hasattr(self, 'lama_border_rubber') and self.lama_border_rubber:
+                self.lama_border_rubber.reset()
+                self.lama_border_rubber = None
+                
             if self.crown_rubber:
                 self.crown_rubber.reset()
                 self.crown_rubber = None
+                
+            if hasattr(self, 'crown_border_rubber') and self.crown_border_rubber:
+                self.crown_border_rubber.reset()
+                self.crown_border_rubber = None
                 
             if self.width_rubber:
                 self.width_rubber.reset()
@@ -649,13 +703,22 @@ class OrthomosaicViewer(QDialog):
             # Convertir coordenadas del perfil a coordenadas del mundo
             world_x, world_y = self._convert_profile_to_world_coords(profile_x, profile_y)
             
-            # Crear RubberBand para punto LAMA
             from qgis.core import QgsWkbTypes
+            # 🆕 Crear RubberBand de Borde para punto LAMA (Rojo)
+            if not hasattr(self, 'lama_border_rubber'):
+                self.lama_border_rubber = None
+            self.lama_border_rubber = QgsRubberBand(self.map_canvas, QgsWkbTypes.PointGeometry)
+            self.lama_border_rubber.addPoint(QgsPointXY(world_x, world_y))
+            self.lama_border_rubber.setColor(QColor(255, 0, 0))  # Rojo
+            self.lama_border_rubber.setWidth(10)
+            self.lama_border_rubber.setIconSize(16)
+            
+            # Crear RubberBand para punto LAMA (Centro Naranjo)
             self.lama_rubber = QgsRubberBand(self.map_canvas, QgsWkbTypes.PointGeometry)
             self.lama_rubber.addPoint(QgsPointXY(world_x, world_y))
             
-            # Establecer estilo amarillo para LAMA
-            self.lama_rubber.setColor(QColor(255, 255, 0))  # Amarillo
+            # Establecer estilo naranjo para LAMA
+            self.lama_rubber.setColor(QColor(255, 165, 0))  # Naranjo
             self.lama_rubber.setWidth(8)
             self.lama_rubber.setIconSize(12)
             
@@ -668,15 +731,28 @@ class OrthomosaicViewer(QDialog):
             # Convertir coordenadas del perfil a coordenadas del mundo
             world_x, world_y = self._convert_profile_to_world_coords(profile_x, profile_y)
             
-            # Crear RubberBand para punto coronamiento
             from qgis.core import QgsWkbTypes
+            # 🆕 Crear RubberBand de Borde para punto Coronamiento (Negro)
+            if not hasattr(self, 'crown_border_rubber'):
+                self.crown_border_rubber = None
+            self.crown_border_rubber = QgsRubberBand(self.map_canvas, QgsWkbTypes.PointGeometry)
+            self.crown_border_rubber.addPoint(QgsPointXY(world_x, world_y))
+            self.crown_border_rubber.setColor(QColor(0, 0, 0))  # Negro
+            self.crown_border_rubber.setWidth(10)
+            self.crown_border_rubber.setIconSize(16)
+            
+            # Crear RubberBand para punto coronamiento (Azul Intenso)
             self.crown_rubber = QgsRubberBand(self.map_canvas, QgsWkbTypes.PointGeometry)
             self.crown_rubber.addPoint(QgsPointXY(world_x, world_y))
             
-            # Establecer estilo verde para coronamiento
-            self.crown_rubber.setColor(QColor(0, 255, 0))  # Verde
+            # Establecer estilo azul intenso para coronamiento
+            self.crown_rubber.setColor(QColor(0, 0, 255))  # Azul Intenso
             self.crown_rubber.setWidth(8)
             self.crown_rubber.setIconSize(12)
+            
+            # Show it over the image
+            self.crown_border_rubber.show()
+            self.crown_rubber.show()
             
         except Exception as e:
             print(f"ERROR al mostrar punto coronamiento: {str(e)}")
@@ -719,8 +795,8 @@ class OrthomosaicViewer(QDialog):
                 None
             )
             
-            # Establecer estilo para línea de ancho (azul)
-            self.width_rubber.setColor(QColor(0, 150, 255))  # Azul
+            # Establecer estilo para línea de ancho (verde normal)
+            self.width_rubber.setColor(QColor(0, 255, 0))  # Verde
             self.width_rubber.setWidth(4)
             self.width_rubber.setLineStyle(Qt.SolidLine)
             

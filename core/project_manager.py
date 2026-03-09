@@ -68,7 +68,9 @@ class ProjectManager:
                             ecw_path: Optional[str],
                             saved_measurements: Optional[Dict[str, Any]],
                             operation_mode: str,
-                            auto_width_detection: bool) -> Dict[str, Any]:
+                            auto_width_detection: bool,
+                            prev_dem_path: Optional[str] = None,
+                            excel_path: Optional[str] = None) -> Dict[str, Any]:
         """
         Crea estructura de datos del proyecto.
         
@@ -79,6 +81,8 @@ class ProjectManager:
             saved_measurements: Diccionario con mediciones guardadas
             operation_mode: Modo de operación
             auto_width_detection: Estado de detección automática de ancho
+            prev_dem_path: Ruta al archivo DEM anterior (Referencia)
+            excel_path: Ruta al archivo Excel de exportación
             
         Returns:
             Diccionario con datos del proyecto
@@ -99,7 +103,9 @@ class ProjectManager:
             },
             "file_paths": {
                 "dem_path": dem_path,
-                "ecw_path": ecw_path
+                "ecw_path": ecw_path,
+                "prev_dem_path": prev_dem_path,
+                "excel_path": excel_path
             },
             "measurements_data": saved_measurements or {},
             "statistics": {
@@ -119,6 +125,8 @@ class ProjectManager:
                      saved_measurements: Optional[Dict[str, Any]],
                      operation_mode: str,
                      auto_width_detection: bool,
+                     prev_dem_path: Optional[str] = None,
+                     excel_path: Optional[str] = None,
                      parent_widget: Optional[QWidget] = None) -> Tuple[bool, Optional[str]]:
         """
         Guarda proyecto en archivo JSON.
@@ -130,6 +138,8 @@ class ProjectManager:
             saved_measurements: Mediciones guardadas
             operation_mode: Modo de operación
             auto_width_detection: Estado de detección automática
+            prev_dem_path: Ruta al archivo DEM anterior
+            excel_path: Ruta al archivo Excel
             parent_widget: Widget padre para diálogos
             
         Returns:
@@ -152,7 +162,7 @@ class ProjectManager:
                 # Crear datos del proyecto
                 project_data = self.create_project_data(
                     wall_name, dem_path, ecw_path, saved_measurements,
-                    operation_mode, auto_width_detection
+                    operation_mode, auto_width_detection, prev_dem_path, excel_path
                 )
                 
                 # Actualizar estadísticas
