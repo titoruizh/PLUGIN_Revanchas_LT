@@ -471,9 +471,9 @@ class ExcelUpdater:
                             val_dist_gl = val_geomembrana - val_lama
                             sheet[f"{cmap['dist_geo_lama']}{row}"].value = val_dist_gl
                             
-                        # Dist Geo vs Crown = Crown - Geomembrana
+                        # Dist prox. geomembrana = abs((Crown - Geomembrana) - 2)
                         if "dist_geo_crown" in cmap and val_crown is not None and val_geomembrana is not None:
-                            val_dist_gc = val_crown - val_geomembrana
+                            val_dist_gc = abs((val_crown - val_geomembrana) - 2.0)
                             sheet[f"{cmap['dist_geo_crown']}{row}"].value = val_dist_gc
 
                     print(f"      MATCH: Row {row} (PK {pk_float:.2f}) updated")

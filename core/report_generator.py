@@ -241,6 +241,10 @@ class ReportGenerator:
                 vx, vy = zip(*valid_geos)
                 # Use dashed line for trend
                 ax.plot(vx, vy, '--', color='blue', linewidth=2, label='Geomembrana')
+                
+                # 🆕 Plot Proxima Geomembrana (Pink line) = Geomembrana + 2
+                vy_prox = [y + 2.0 for y in vy]
+                ax.plot(vx, vy_prox, '-.', color='deeppink', linewidth=2, label='Próxima Geomem.')
             
             # Styling
             ax.set_title("Perfil Longitudinal (Tendencia)", fontsize=16, fontweight='bold', pad=20)
@@ -280,7 +284,7 @@ class ReportGenerator:
         html = [style, "<table>"]
         
         # Headers
-        headers = ["Sector", "PK", "Coronamiento", "Revancha", "Lama", "Ancho", "Geomembrana", "Dist. G-L", "Dist. G-C"]
+        headers = ["Sector", "PK", "Coronamiento", "Revancha", "Lama", "Ancho", "Geomembrana", "Dist. G-L", "Dist. prox.<br>geomenbrana"]
         html.append("<thead><tr>")
         for h in headers:
             html.append(f"<th>{h}</th>")

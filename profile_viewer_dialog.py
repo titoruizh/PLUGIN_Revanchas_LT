@@ -3093,7 +3093,7 @@ class InteractiveProfileViewer(QDialog):
         html = [style, "<table>"]
         
         # Headers (Reverted to Full Names and added metric units)
-        headers = ["Sector", "PK", "Coronamiento (m)", "Revancha (m)", "Lama (m)", "Ancho (m)", "Geomemb. (m)", "Dist. G-L (m)", "Dist. G-C (m)"]
+        headers = ["Sector", "PK", "Coronamiento (m)", "Revancha (m)", "Lama (m)", "Ancho (m)", "Geomemb. (m)", "Dist. G-L (m)", "Dist. prox.<br>geomenbrana (m)"]
         html.append("<thead><tr>")
         for h in headers:
             html.append(f"<th>{h}</th>")
@@ -3184,12 +3184,12 @@ class InteractiveProfileViewer(QDialog):
                     else:
                         dgl_cls = "bg-red geo-col"
                 
-                # D. G-C (Coronamiento - Geomembrana) con colores
+                # D. prox geomembrana (Abs(Cota_Coronamiento - Geomembrana) - 2) con colores
                 if crown_val is not None:
-                    dgc_val = crown_val - geomembrane_val
+                    dgc_val = abs((crown_val - geomembrane_val) - 2.0)
                     dgc_txt = f"{dgc_val:.3f}"
                     if dgc_val > 1.0:
-                        pass
+                        dgc_cls = "bg-green geo-col"
                     elif dgc_val >= 0.5:
                         dgc_cls = "bg-yellow geo-col"
                     else:
@@ -3511,9 +3511,9 @@ class InteractiveProfileViewer(QDialog):
                         <table class="legend-table">
                             <thead><tr><th colspan="2">Geomembrana</th></tr></thead>
                             <tbody>
-                                <tr><td>> 1.0m</td><td class="status-cell bg-blue">Favorable</td></tr>
+                                <tr><td>> 1.0m</td><td class="status-cell bg-green">Favorable</td></tr>
                                 <tr><td>0.5 - 1.0m</td><td class="status-cell bg-yellow">Estable</td></tr>
-                                <tr><td>< 0.5m</td><td class="status-cell bg-red">Critico</td></tr>
+                                <tr><td>< 0.5m</td><td class="status-cell bg-red">Instalacion lamina</td></tr>
                             </tbody>
                         </table>
                     </td>
