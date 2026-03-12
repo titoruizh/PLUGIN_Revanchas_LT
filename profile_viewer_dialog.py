@@ -1916,7 +1916,7 @@ class InteractiveProfileViewer(QDialog):
             
             # 🔴 ALERT: Check Revancha < 3m (HTML Styling)
             revancha_str = f"{revancha:.2f}"
-            if revancha < 3.0:
+            if revancha <= 3.0:
                 revancha_str = f"<span style='color:red;'>{revancha_str}</span>"
             
             self.revancha_result.setText(f"Revancha: {revancha_str} m")
@@ -2266,9 +2266,9 @@ class InteractiveProfileViewer(QDialog):
                 if lama_val is not None:
                     pack_items.append(TextArea(f"● Cota Lama: {lama_val:.2f} m", textprops=dict(color='black', size=11, family='monospace')))
                 
-                # Revancha (ROJO si < 3.0)
+                # Revancha (ROJO si <= 3.0)
                 if revancha_val is not None:
-                    color = 'red' if revancha_val < 3.0 else 'black'
+                    color = 'red' if revancha_val <= 3.0 else 'black'
                     pack_items.append(TextArea(f"  Revancha: {revancha_val:.2f} m", textprops=dict(color=color, size=11, family='monospace')))
                 
                 # Ancho (ROJO si < 15.0)
@@ -3142,9 +3142,9 @@ class InteractiveProfileViewer(QDialog):
             revancha_cls = ""
             if revancha_val is not None:
                 revancha_txt = f"{revancha_val:.3f}"
-                if revancha_val > 3.5:
+                if revancha_val > 3.20:
                     revancha_cls = "bg-green"
-                elif revancha_val >= 3.0:
+                elif revancha_val > 3.0:
                     revancha_cls = "bg-yellow"
                 else:
                     revancha_cls = "bg-red"
@@ -3389,8 +3389,8 @@ class InteractiveProfileViewer(QDialog):
             
             # Aplicar colores según tipo de valor
             if value_type == 'revancha':
-                if val > 3.5: cls = "bg-green"
-                elif val >= 3.0: cls = "bg-yellow"
+                if val > 3.20: cls = "bg-green"
+                elif val > 3.0: cls = "bg-yellow"
                 else: cls = "bg-red"
             elif value_type == 'ancho':
                 if val > 18.0: cls = "bg-green"
@@ -3489,9 +3489,9 @@ class InteractiveProfileViewer(QDialog):
                         <table class="legend-table">
                             <thead><tr><th colspan="2">Revancha</th></tr></thead>
                             <tbody>
-                                <tr><td>> 3.5m</td><td class="status-cell bg-green">Favorable</td></tr>
-                                <tr><td>3.0 - 3.5m</td><td class="status-cell bg-yellow">Estable</td></tr>
-                                <tr><td>< 3.0m</td><td class="status-cell bg-red">Critico</td></tr>
+                                <tr><td>> 3.20m</td><td class="status-cell bg-green">Favorable</td></tr>
+                                <tr><td>3.0 - 3.20m</td><td class="status-cell bg-yellow">Estable</td></tr>
+                                <tr><td><= 3.0m</td><td class="status-cell bg-red">Critico</td></tr>
                             </tbody>
                         </table>
                     </td>

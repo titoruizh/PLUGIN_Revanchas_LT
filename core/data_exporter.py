@@ -166,7 +166,7 @@ class DataExporter:
             else:
                 if row.get('Revancha') is not None:
                     stats['profiles_with_data'] += 1
-                    if row['Revancha'] < 3.0:
+                    if row['Revancha'] <= 3.0:
                         stats['revancha_alerts'] += 1
                 if row.get('Ancho') is not None and row['Ancho'] < 15.0:
                     stats['width_alerts'] += 1

@@ -323,7 +323,7 @@ class ReportGenerator:
             
             coronamiento_txt = f"{crown_val:.3f}" if crown_val is not None else "-"
             
-            revancha_cls = "alert" if (revancha_val is not None and revancha_val < 3.0) else ""
+            revancha_cls = "alert" if (revancha_val is not None and revancha_val <= 3.0) else ""
             revancha_txt = f"{revancha_val:.3f}" if revancha_val is not None else "-"
             if revancha_cls:
                 revancha_txt = f"<span class='{revancha_cls}'>{revancha_txt}</span>"
@@ -479,7 +479,7 @@ class ReportGenerator:
             
             revancha_alert = False
             if crown_val is not None and lama_val is not None:
-                if (crown_val - lama_val) < 3.0:
+                if (crown_val - lama_val) <= 3.0:
                     revancha_alert = True
             
             # Check Width < 15
